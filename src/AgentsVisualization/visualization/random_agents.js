@@ -19,7 +19,7 @@ import { Camera3D } from '../libs/camera3d';
 
 // Functions and arrays for the communication with the API
 import {
-  agents, obstacles, initAgentsModel,
+  agents, obstacles, trafficLights, initAgentsModel,
   update, getCars, getLights, getDestination, getRoads, getObstacles
 } from '../libs/api_connection.js';
 
@@ -49,6 +49,23 @@ const duration = 1000; // ms
 let elapsed = 0;
 let then = 0;
 
+// Global variables for OBJ models
+let carObjData = null;
+let buildingObjData = null;
+let trafficLightObjData = null;
+
+// Function to load OBJ files
+async function loadObjFile(url) {
+  try {
+    const response = await fetch(url);
+    const text = await response.text();
+    console.log(`Successfully loaded OBJ from ${url}`);
+    return text;
+  } catch (error) {
+    console.error(`Error loading OBJ file from ${url}:`, error);
+    return null;
+  }
+}
 
 // Main function is async to be able to make the requests
 async function main() {
@@ -60,6 +77,13 @@ async function main() {
 
   // Prepare the program with the shaders
   colorProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+
+  // Load OBJ models from assets folder
+  console.log('Loading OBJ models...');
+  carObjData = await loadObjFile('../assets/models/car2.obj');
+  buildingObjData = await loadObjFile('../assets/models/EdificioSimple.obj');
+  trafficLightObjData = await loadObjFile('../assets/models/Semaforo.obj');
+  console.log('OBJ models loaded');
 
   // Initialize the agents model
   await initAgentsModel();
@@ -106,27 +130,70 @@ function setupObjects(scene, gl, programInfo) {
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
-  // Store the base cube for later use
-  scene.baseCube = baseCube;
+  // Create car model from OBJ
+  const baseCar = new Object3D(-2);
+  if (carObjData) {
+    baseCar.prepareVAO(gl, programInfo, carObjData);
+    console.log('Car model loaded successfully');
+  } else {
+    baseCar.prepareVAO(gl, programInfo); // Fallback to cube
+    console.log('Using default cube for cars');
+  }
 
-  // Copy the properties of the base objects
+  // Create building model from OBJ
+  const baseBuilding = new Object3D(-3);
+  if (buildingObjData) {
+    baseBuilding.prepareVAO(gl, programInfo, buildingObjData);
+    console.log('Building model loaded successfully');
+  } else {
+    baseBuilding.prepareVAO(gl, programInfo); // Fallback to cube
+    console.log('Using default cube for buildings');
+  }
+
+  // Create traffic light model from OBJ
+  const baseTrafficLight = new Object3D(-4);
+  if (trafficLightObjData) {
+    baseTrafficLight.prepareVAO(gl, programInfo, trafficLightObjData);
+    console.log('Traffic light model loaded successfully');
+  } else {
+    baseTrafficLight.prepareVAO(gl, programInfo); // Fallback to cube
+    console.log('Using default cube for traffic lights');
+  }
+
+  // Store the base models for later use
+  scene.baseCube = baseCube;
+  scene.baseCar = baseCar;
+  scene.baseBuilding = baseBuilding;
+  scene.baseTrafficLight = baseTrafficLight;
+
+  // Setup cars with car model
   for (const agent of agents) {
-    agent.arrays = baseCube.arrays;
-    agent.bufferInfo = baseCube.bufferInfo;
-    agent.vao = baseCube.vao;
-    agent.scale = { x: 0.5, y: 0.5, z: 0.5 };
+    agent.arrays = baseCar.arrays;
+    agent.bufferInfo = baseCar.bufferInfo;
+    agent.vao = baseCar.vao;
+    agent.scale = { x: 0.3, y: 0.3, z: 0.3 };
     agent.color = [1.0, 0.0, 0.0, 1.0]; // Red for cars
     scene.addObject(agent);
   }
 
-  // Copy the properties of the base objects
+  // Setup obstacles (buildings) with building model
   for (const agent of obstacles) {
-    agent.arrays = baseCube.arrays;
-    agent.bufferInfo = baseCube.bufferInfo;
-    agent.vao = baseCube.vao;
-    agent.scale = { x: 0.5, y: 0.5, z: 0.5 };
+    agent.arrays = baseBuilding.arrays;
+    agent.bufferInfo = baseBuilding.bufferInfo;
+    agent.vao = baseBuilding.vao;
+    agent.scale = { x: 0.03, y: 0.05, z: 0.03 } //{ x: 0.01, y: 0.03, z: 0.01 }; // Ajusta estos valores según necesites
     agent.color = [0.7, 0.7, 0.7, 1.0];
     scene.addObject(agent);
+  }
+
+  // Setup traffic lights with traffic light model
+  for (const light of trafficLights) {
+    light.arrays = baseTrafficLight.arrays;
+    light.bufferInfo = baseTrafficLight.bufferInfo;
+    light.vao = baseTrafficLight.vao;
+    light.scale = { x: 0.01, y: 0.01, z: 0.01 };
+    light.color = [0.0, 1.0, 0.0, 1.0]; // Verde para semáforos
+    scene.addObject(light);
   }
 }
 
@@ -146,11 +213,11 @@ function updateSceneObjects() {
       // Update position of existing object
       existingObj.posArray = agent.posArray;
     } else {
-      // Add new object to scene
-      agent.arrays = scene.baseCube.arrays;
-      agent.bufferInfo = scene.baseCube.bufferInfo;
-      agent.vao = scene.baseCube.vao;
-      agent.scale = { x: 0.5, y: 0.5, z: 0.5 };
+      // Add new object to scene with car model
+      agent.arrays = scene.baseCar.arrays;
+      agent.bufferInfo = scene.baseCar.bufferInfo;
+      agent.vao = scene.baseCar.vao;
+      agent.scale = { x: 0.3, y: 0.3, z: 0.3 };
       agent.color = [1.0, 0.0, 0.0, 1.0]; // Red for cars
       scene.addObject(agent);
     }

@@ -13,6 +13,7 @@ const agent_server_uri = "http://localhost:8585/";
 
 const agents = [];
 const obstacles = [];
+const trafficLights = [];
 const roads = [];
 const destinations = [];
 
@@ -85,10 +86,10 @@ async function getLights() {
             let result = await response.json();
 
             // Only create lights once
-            if (obstacles.length == 0) {
+            if (trafficLights.length == 0) {
                 for (const light of result.positions) {
                     const newLight = new Object3D(light.id, [light.x, light.y, light.z]);
-                    obstacles.push(newLight);
+                    trafficLights.push(newLight);
                 }
             }
         }
@@ -176,4 +177,4 @@ async function update() {
     }
 }
 
-export { agents, obstacles, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };
+export { agents, obstacles, trafficLights, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };

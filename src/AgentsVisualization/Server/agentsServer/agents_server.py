@@ -39,7 +39,7 @@ def initModel():
     print(f"Model parameters:{number_agents, width, height}")
 
     # Create the model using the parameters sent by the application
-    cityModel = CityModel(number_agents,42)  # <------------------------- seed ?
+    cityModel = CityModel(number_agents,42,10)  # <------------------------- seed ?
 
     # Return a message to saying that the model was created successfully
     return jsonify({"message": f"Parameters recieved, model initiated.\nSize: {width}x{height}"})

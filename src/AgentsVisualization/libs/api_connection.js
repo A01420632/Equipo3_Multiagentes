@@ -54,24 +54,17 @@ async function getCars() {
         if (response.ok) {
             let result = await response.json();
 
-            // Check if the agents array is empty
-            if (agents.length == 0) {
-                // Create new agents and add them to the agents array
-                for (const agent of result.positions) {
+            for (const agent of result.positions) {
+                const current_agent = agents.find((object3d) => object3d.id == agent.id);
+
+                if(current_agent != undefined){
+                    current_agent.oldPosArray = current_agent.posArray;
+                    current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
+                } else {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
                     newCar['oldPosArray'] = newCar.posArray;
                     agents.push(newCar);
-                }
-            } else {
-                // Update the positions of existing agents
-                for (const agent of result.positions) {
-                    const current_agent = agents.find((object3d) => object3d.id == agent.id);
-
-                    if(current_agent != undefined){
-                        // Update the agent's position using the setter
-                        current_agent.oldPosArray = current_agent.posArray;
-                        current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
-                    }
+                    console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
                 }
             }
         }
@@ -174,6 +167,7 @@ async function update() {
 
         if (response.ok) {
             await getCars();
+            await getLights();
             console.log("Updated agents");
         }
 

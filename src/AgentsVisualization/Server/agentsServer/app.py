@@ -54,7 +54,8 @@ model = CityModel(
     num_agents=model_params["num_agents"].value,
     width=model_params["width"].value,
     height=model_params["height"].value,
-    seed=model_params["seed"]["value"])
+    seed=model_params["seed"]["value"],
+)
 
 renderer = SpaceRenderer(
     model,

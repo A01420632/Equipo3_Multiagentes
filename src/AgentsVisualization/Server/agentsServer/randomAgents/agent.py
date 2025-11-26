@@ -2,13 +2,13 @@ from mesa.discrete_space import CellAgent, FixedAgent
 
 class Car(CellAgent):
     """
-    Agent that moves randomly.
-    Attributes:
-        unique_id: Agent's ID
+    Luego actualizar para que tenga cosas de FSM
     """
+    
+    
     def __init__(self, model, cell, unique_id):
         """
-        Creates a new random agent.
+        Creates a new car agent.
         Args:
             model: Model reference for the agent
             cell: Reference to its position within the grid
@@ -17,36 +17,105 @@ class Car(CellAgent):
         super().__init__(model)
         self.cell = cell
         self.steps_taken = 0
+        self.state = "Moving"
+        self.last_direction = None 
 
-    def move(self):
-        """
-        Determines if the agent can move in the direction that was chosen
-        """
-        # Get neighboring cells that have Roads
-        possible_moves = self.cell.neighborhood.select(
-            lambda cell: any(isinstance(obj, Road) for obj in cell.agents)
-        )
-        
-        # Filter out cells that already have Cars
-        next_moves = possible_moves.select(
-            lambda cell: not any(isinstance(obj, Car) for obj in cell.agents)
-        )
-        
-        print(f"Car {self.unique_id} at {self.cell.coordinate}: {len(possible_moves)} roads, {len(next_moves)} empty roads")
-        
-        if len(next_moves) > 0:
-            old_pos = self.cell.coordinate
-            self.cell = next_moves.select_random_cell()
-            self.steps_taken += 1
-            print(f"Car {self.unique_id} moved from {old_pos} to {self.cell.coordinate}")
+    def getValidDirections(self, current_cell):
+        road = None
+        for agent in current_cell.agents:
+            if isinstance(agent, Road):
+                road = agent
+                self.last_direction = road.direction
+                break
+        if not road and self.last_direction:
+            direction = self.last_direction
+        elif road:
+            direction = road.direction
         else:
-            print(f"Car {self.unique_id} stuck at {self.cell.coordinate} - no available moves")
-            
+            return []
+        
+        x, y = current_cell.coordinate
+        
+        direction_map = {
+            "Right": (1, 0),
+            "Left": (-1, 0),
+            "Up": (0, 1),
+            "Down": (0, -1)
+        }
+        
+        if direction not in direction_map:
+            return []
+        dx, dy = direction_map[direction]
+        next_pos = (x + dx, y + dy)
+        try:
+            next_cell = self.model.grid[next_pos]
+            return [next_cell]
+        except:
+            return []
+
+    def checkNextCell(self):
+        valid_cells = self.getValidDirections(self.cell)
+        if not valid_cells:
+            return None, "WaitingTraffic"
+        
+        next_cell = valid_cells[0]
+        has_valid_destination = any(
+            isinstance(obj, (Road, Traffic_Light, Destination)) 
+            for obj in next_cell.agents
+        )
+        
+        if not has_valid_destination:
+            return None, "WaitingTraffic"
+        
+        has_destination = any(isinstance(obj, Destination) for obj in next_cell.agents)
+        if has_destination:
+            return next_cell, "AtDestination"
+        
+        for agent in next_cell.agents:
+            if isinstance(agent, Traffic_Light) and not agent.state:
+                return None, "WaitingRedLight"
+        
+        for agent in next_cell.agents:
+            if isinstance(agent, Car):
+                if agent.state in ["WaitingRedLight", "WaitingTraffic"]:
+                    return None, "WaitingTraffic"
+        
+        has_car = any(isinstance(obj, Car) for obj in next_cell.agents)
+        if has_car:
+            return None, "WaitingTraffic"
+        
+        return next_cell, "Moving"
+
+    def transitionState(self, new_state):
+        if self.state != new_state:
+            print(f"Car {self.unique_id} at {self.cell.coordinate}: {self.state} -> {new_state}")
+            self.state = new_state
+
+    def update(self):
+        """
+        Main update function - core of the FSM
+        Checks next cell and acts based on current state and conditions
+        """
+        next_cell, new_state = self.checkNextCell()
+        
+        if new_state == "AtDestination" and next_cell:
+            print(f"Car {self.unique_id} reached destination at {next_cell.coordinate}")
+            self.cell = next_cell
+            self.model.agents.remove(self)
+            return
+        
+        if new_state == "Moving" and next_cell:
+            old_pos = self.cell.coordinate
+            self.cell = next_cell
+            self.steps_taken += 1
+            self.transitionState("Moving")
+            print(f"Car {self.unique_id} moved from {old_pos} to {self.cell.coordinate} heading {self.last_direction}")
+        else:
+            self.transitionState(new_state)
+
     def step(self):
-        """
-        Determines the new direction it will take, and then moves
-        """
-        self.move()
+        self.update()
+
 
 class Traffic_Light(FixedAgent):
     """
@@ -72,6 +141,8 @@ class Traffic_Light(FixedAgent):
         """
         if self.model.steps % self.timeToChange == 0:
             self.state = not self.state
+            print(f"Traffic light at {self.cell.coordinate} changed to {'GREEN' if self.state else 'RED'}")
+
 
 class Destination(FixedAgent):
     """
@@ -89,6 +160,7 @@ class Destination(FixedAgent):
     def step(self):
         pass
 
+
 class Obstacle(FixedAgent):
     """
     Obstacle agent. Just to add obstacles to the grid.
@@ -105,6 +177,7 @@ class Obstacle(FixedAgent):
         self.cell = cell
     def step(self):
         pass
+
 
 class Road(FixedAgent):
     """

@@ -20,7 +20,7 @@ import { loadMtl } from '../libs/obj_loader';
 
 // Functions and arrays for the communication with the API
 import {
-  agents, obstacles, trafficLights, initAgentsModel,
+  agents, obstacles, trafficLights, roads, initAgentsModel,
   update, getCars, getLights, getDestination, getRoads, getObstacles
 } from '../libs/api_connection.js';
 
@@ -54,11 +54,13 @@ let then = 0;
 let carObjData = null;
 let buildingObjData = null;
 let trafficLightObjData = null;
+let roadObjData = null;
 
 // Global variables for MTL materials
 let carMaterials = null;
 let buildingMaterials = null;
 let trafficLightMaterials = null;
+let roadMaterials = null;
 
 // Function to load OBJ files with optional MTL
 async function loadObjFile(url) {
@@ -104,15 +106,18 @@ async function main() {
   const carData = await loadObjFile('../assets/models/car2.obj');
   const buildingData = await loadObjFile('../assets/models/EdificioSimple.obj');
   const trafficLightData = await loadObjFile('../assets/models/Semaforo.obj');
+  const roadData = await loadObjFile('../assets/models/Road.obj');
   
   // Extract OBJ data and materials
   carObjData = carData ? carData.objData : null;
   buildingObjData = buildingData ? buildingData.objData : null;
   trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
+  roadObjData = roadData ? roadData.objData : null;
   
   carMaterials = carData ? carData.materials : null;
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
+  roadMaterials = roadData ? roadData.materials : null;
   
   console.log('OBJ models and materials loaded');
   if (carMaterials) console.log('Car materials:', carMaterials);
@@ -164,8 +169,8 @@ function setupObjects(scene, gl, programInfo) {
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
-  // Create car model from OBJ
-  const baseCar = new Object3D(-2);
+  // Create car model from OBJ (invertir caras)
+  const baseCar = new Object3D(-2, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (carObjData) {
     baseCar.prepareVAO(gl, programInfo, carObjData, carMaterials);
     console.log('Car model loaded successfully');
@@ -175,7 +180,7 @@ function setupObjects(scene, gl, programInfo) {
   }
 
   // Create building model from OBJ
-  const baseBuilding = new Object3D(-3);
+  const baseBuilding = new Object3D(-3, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
   if (buildingObjData) {
     baseBuilding.prepareVAO(gl, programInfo, buildingObjData, buildingMaterials);
     console.log('Building model loaded successfully');
@@ -194,11 +199,22 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for traffic lights');
   }
 
+  // Create road model from OBJ
+  const baseRoad = new Object3D(-5);
+  if (roadObjData) {
+    baseRoad.prepareVAO(gl, programInfo, roadObjData, roadMaterials);
+    console.log('Road model loaded successfully');
+  } else {
+    baseRoad.prepareVAO(gl, programInfo); // Fallback to cube
+    console.log('Using default cube for roads');
+  }
+
   // Store the base models for later use
   scene.baseCube = baseCube;
   scene.baseCar = baseCar;
   scene.baseBuilding = baseBuilding;
   scene.baseTrafficLight = baseTrafficLight;
+  scene.baseRoad = baseRoad;
 
   // Setup cars with car model
   for (const agent of agents) {
@@ -252,6 +268,28 @@ function setupObjects(scene, gl, programInfo) {
     }
     
     scene.addObject(light);
+  }
+
+  // Setup roads with road model
+  for (const road of roads) {
+    road.arrays = baseRoad.arrays;
+    road.bufferInfo = baseRoad.bufferInfo;
+    road.vao = baseRoad.vao;
+    road.scale = { x: 1.0, y: 0.1, z: 1.0 }; // Ajusta la escala según tu modelo
+    
+    // Apply color from MTL if available
+    if (roadMaterials && Object.keys(roadMaterials).length > 0) {
+      const firstMaterial = Object.values(roadMaterials)[0];
+      if (firstMaterial && firstMaterial.Kd) {
+        road.color = [...firstMaterial.Kd, 1.0];
+      } else {
+        road.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+      }
+    } else {
+      road.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+    }
+    
+    scene.addObject(road);
   }
 }
 

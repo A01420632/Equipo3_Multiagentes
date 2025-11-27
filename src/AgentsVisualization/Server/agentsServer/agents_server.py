@@ -70,7 +70,7 @@ def getCars():
             # print(f"AGENTS: {agents}")
 
             agentPositions = [
-                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
+                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1], "dirActual": a.dirActual}
                 for (coordinate, a) in agents
             ]
             # print(f"AGENT POSITIONS: {agentPositions}")

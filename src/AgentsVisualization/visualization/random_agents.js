@@ -104,25 +104,55 @@ function setupScene() {
   scene.camera.setupControls();
 }
 
+// Agregar función helper para convertir dirección a ángulo
+function directionToAngle(direction) {
+    const angles = {
+        "Right": 0,
+        "Up": Math.PI / 2,
+        "Left": Math.PI,
+        "Down": -Math.PI / 2
+    };
+    return angles[direction] || 0;
+}
+
+function processAngle(from, to, t) {
+    const normalizeAngle = (angle) => {
+        while (angle > Math.PI) angle -= 2 * Math.PI;
+        while (angle < -Math.PI) angle += 2 * Math.PI;
+        return angle;
+    };
+    
+    from = normalizeAngle(from);
+    to = normalizeAngle(to);
+    
+    // Calcular diferencia más corta
+    let diff = to - from;
+    if (diff > Math.PI) diff -= 2 * Math.PI;
+    if (diff < -Math.PI) diff += 2 * Math.PI;
+    
+    return from + diff * t;
+}
+
 function setupObjects(scene, gl, programInfo) {
-  // Create VAOs for the different shapes
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
-  // Store the base cube for later use
   scene.baseCube = baseCube;
 
-  // Copy the properties of the base objects
   for (const agent of agents) {
     agent.arrays = baseCube.arrays;
     agent.bufferInfo = baseCube.bufferInfo;
     agent.vao = baseCube.vao;
     agent.scale = { x: 0.5, y: 0.5, z: 0.5 };
-    agent.color = [1.0, 0.0, 0.0, 1.0]; // Red for cars
+    agent.color = [1.0, 0.0, 0.0, 1.0];
+    
+    // ===== INICIALIZAR ROTACIÓN =====
+    agent.rotation = { x: 0, y: directionToAngle(agent.direction || "Right"), z: 0 };
+    agent.oldRotation = { ...agent.rotation };
+    
     scene.addObject(agent);
   }
 
-  // Copy the properties of the base objects
   for (const agent of obstacles) {
     agent.arrays = baseCube.arrays;
     agent.bufferInfo = baseCube.bufferInfo;
@@ -133,7 +163,6 @@ function setupObjects(scene, gl, programInfo) {
   }
 }
 
-// Optimized function to update scene objects after fetching new positions
 function updateSceneObjects() {
   const currentAgentIds = new Set(agents.map(agent => agent.id));
   const obstacleIds = new Set(obstacles.map(obs => obs.id));
@@ -143,29 +172,50 @@ function updateSceneObjects() {
     if (obj.id === -1) return true;
     return currentAgentIds.has(obj.id);
   });
+  
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
     if (existingObj) {
       existingObj.oldPosArray = [...existingObj.posArray];
       existingObj.position = agent.position;
-    } 
-    else {
+      
+      existingObj.oldRotation = { ...existingObj.rotation };
+      existingObj.rotation = { 
+        x: 0, 
+        y: directionToAngle(agent.direction), 
+        z: 0 
+      };
+      
+    } else {
       agent.arrays = scene.baseCube.arrays;
       agent.bufferInfo = scene.baseCube.bufferInfo;
       agent.vao = scene.baseCube.vao;
       agent.scale = { x: 0.5, y: 0.5, z: 0.5 };
-      agent.color = [1.0, 0.0, 0.0, 1.0]; // Red for cars
-      agent.oldPosArray = [...agent.posArray]; // Initialize old position
+      agent.color = [1.0, 0.0, 0.0, 1.0];
+      agent.oldPosArray = [...agent.posArray];
+      
+      agent.rotation = { x: 0, y: dirToAngle(agent.direction || "Right"), z: 0 };
+      agent.oldRotation = { ...agent.rotation };
+      
       scene.addObject(agent);
-      //console.log(`Added car ${agent.id} at (${agent.posArray[0]}, ${agent.posArray[2]})`);
     }
   }
 }
 
+function dirToAngle(dir) {
+  const angulos = {
+    "Right": 0,
+    "Up": Math.PI / 2,
+    "Left": Math.PI,
+    "Down": 3 * Math.PI / 2
+  };
+  return angulos[dir] || 0;
+}
+
 // Draw an object with its corresponding transformations
 function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
-  let v3_tra = object.posArray;
+  let v3_tra = object.posArray; //interpolar posicion
   
   if (object.oldPosArray && fract < 1.0) {
     v3_tra = [
@@ -175,12 +225,21 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
     ];
   }
   
+  let rotY = object.rotRad.y; // interpolar rot.
+  
+  if (object.oldRotation && object.rotation && fract < 1.0) {
+    rotY = processAngle(object.oldRotation.y, object.rotation.y, fract);
+  } 
+  else if (object.rotation) {
+    rotY = object.rotation.y;
+  }
+  
   let v3_sca = object.scaArray;
 
   // Create the individual transform matrices
   const scaMat = M4.scale(v3_sca);
   const rotXMat = M4.rotationX(object.rotRad.x);
-  const rotYMat = M4.rotationY(object.rotRad.y);
+  const rotYMat = M4.rotationY(rotY);  // ← USAR ROTACIÓN INTERPOLADA
   const rotZMat = M4.rotationZ(object.rotRad.z);
   const traMat = M4.translation(v3_tra);
 
@@ -205,7 +264,6 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
   }
   twgl.setUniforms(programInfo, objectUniforms);
   
-
   gl.bindVertexArray(object.vao);
   twgl.drawBufferInfo(gl, object.bufferInfo);
 }
@@ -236,13 +294,12 @@ async function drawScene() {
     drawObject(gl, colorProgramInfo, object, viewProjectionMatrix, fract);
   }
 
-  // Request update in advance (double buffering)
-  if (elapsed >= duration * 0.7 && !isUpdating && !pendingUpdate) { // Start fetching next frame data when 70% through current animation
+  // doble bugfer
+  if (elapsed >= duration * 0.5 && !isUpdating && !pendingUpdate) {
     pendingUpdate = true;
     updateInBackground();
   }
 
-  // Apply the buffered update when animation completes
   if (elapsed >= duration && !isUpdating) {
     elapsed = 0;
   }

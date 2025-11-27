@@ -67,10 +67,14 @@ async function getCars() {
 
                 if(current_agent != undefined){
                     current_agent.oldPosArray = [...current_agent.posArray];
+                    current_agent.oldDir = current_agent.dirActual;
+                    current_agent.dirActual = agent.dirActual;
                     current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
                 } else {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
                     newCar.oldPosArray = [...newCar.posArray];
+                    newCar.dirActual = agent.dirActual;
+                    newCar.oldDir = newCar.dirActual;
                     agents.push(newCar);
                     //console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
                 }

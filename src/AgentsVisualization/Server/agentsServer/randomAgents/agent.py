@@ -13,6 +13,7 @@ class Car(CellAgent):
         self.dest = dest
         self.path = []
         self.pathIndex = 0
+        self.dirActual  = None
 
         self.weightDist = 1.0
         self.weightCars = 3.0
@@ -79,49 +80,81 @@ class Car(CellAgent):
         return has_car, has_red_light, has_destination, road_direction, has_traffic_light
 
     def getVecinos(self, cell):
-        """Obtiene vecinos válidos según reglas de tráfico"""
+        """
+        Obtiene vecinos válidos con movimiento diagonal.
+        Solo permite: adelante, adelante-izquierda diagonal, adelante-derecha diagonal
+        """
         neighbors = []
         x, y = cell.coordinate
-        _, _, _, current_direction, _ = self.getCellInfo(cell)
+        _, _, _, direccion, _ = self.getCellInfo(cell)
         
-        offsets = {
-            "Right": (x+1, y), "Left": (x-1, y),
-            "Up": (x, y+1), "Down": (x, y-1)
+        if not direccion: 
+            return neighbors
+        
+        movimientos = {
+            "Right": [
+                ("Right", (x+1, y)),
+                ("Up", (x+1, y+1)),
+                ("Down", (x+1, y-1))
+            ], 
+            "Left": [
+                ("Left", (x-1, y)),
+                ("Down", (x-1, y-1)),
+                ("Up", (x-1, y+1))
+            ],
+            "Up": [
+                ("Up", (x, y+1)),
+                ("Right", (x+1, y+1)),
+                ("Left", (x-1, y+1))
+            ],
+            "Down": [
+                ("Down", (x, y-1)),
+                ("Left", (x-1, y-1)),
+                ("Right", (x+1, y-1))
+            ]
         }
         
-        for direction_name, (nx, ny) in offsets.items():
-            # Bounds check rápido
+        if direccion not in movimientos:
+            return neighbors
+        
+        permitidos = movimientos[direccion]
+        
+        for dir_name, (nx, ny) in permitidos:
+            # Bounds check
             if not (0 <= nx < self.model.width and 0 <= ny < self.model.height):
                 continue
             
             try:
                 nextCell = self.model.grid[(nx, ny)]
-                
-                # Verificar que haya road/traffic_light/destination
                 _, _, has_dest, next_road_dir, has_tl = self.getCellInfo(nextCell)
+                
+                # Debe haber road, traffic light o destination
                 if not (has_dest or has_tl or next_road_dir):
                     continue
                 
-                # Validar giro desde celda actual
-                if current_direction and not self.isValidTurn(current_direction, direction_name):
-                    continue
-                
-                # Validar entrada a celda siguiente
+                # Si es destino o semáforo, siempre permitir
                 if has_tl or has_dest:
                     neighbors.append(nextCell)
                     continue
                 
-                # Validar que no sea contra sentido
+                # Validar que no sea contra-sentido
                 if next_road_dir:
-                    opposites = {"Right": "Left", "Left": "Right", "Up": "Down", "Down": "Up"}
-                    if direction_name == opposites.get(next_road_dir):
+                    opposites = {
+                        "Right": "Left", 
+                        "Left": "Right", 
+                        "Up": "Down", 
+                        "Down": "Up"
+                    }
+                    # Si el movimiento es opuesto a la dirección de la calle, rechazar
+                    if dir_name == opposites.get(next_road_dir):
                         continue
-                
+            
                 neighbors.append(nextCell)
             except:
                 pass
         
         return neighbors
+
 
     def calcPathAEstrella(self):
         """A* optimizado"""
@@ -139,7 +172,7 @@ class Car(CellAgent):
         openSetHash = {start}
         cont = 1
         
-        for _ in range(10000):  # Max iterations
+        for _ in range(10000):  # Maximo
             if not open_set:
                 break
             
@@ -195,15 +228,12 @@ class Car(CellAgent):
         Obtiene la siguiente celda válida.
         Retorna: (nextCell, should_recalc) o (None, False)
         """
-        # Recalcular si es necesario
         if self.dest and self.shouldRecalculatePath():
             self.calcPathAEstrella()
         
-        # Usar path si existe
         if self.path and self.pathIndex < len(self.path):
             next_cell = self.path[self.pathIndex]
             
-            # Validar giros en semáforos
             _, _, _, _, has_tl = self.getCellInfo(self.cell)
             if has_tl:
                 move_dir = self.getDirectionBetweenCells(self.cell, next_cell)
@@ -216,7 +246,6 @@ class Car(CellAgent):
             
             return next_cell, False
         
-        # Fallback: seguir road direction
         _, _, _, road_dir, _ = self.getCellInfo(self.cell)
         if not road_dir:
             road_dir = self.last_direction
@@ -244,7 +273,6 @@ class Car(CellAgent):
         FSM completo en un solo método - sin llamadas recursivas.
         Orden: Check destino → Obtener next → Actualizar estado → Ejecutar acción
         """
-        # ===== 1. CHECK TERMINAL STATE =====
         if self.state == "AtDestination":
             # Cleanup
             old_cell = self.cell
@@ -261,29 +289,23 @@ class Car(CellAgent):
             self.cell = None
             return
         
-        # ===== 2. CHECK SI LLEGÓ AL DESTINO =====
         _, _, at_dest, _, _ = self.getCellInfo(self.cell)
         if at_dest:
             self.state = "AtDestination"
-            return  # Se ejecuta cleanup en siguiente step
+            return 
         
-        # ===== 3. OBTENER SIGUIENTE CELDA =====
         nextCell, _ = self.getNextCell()
         
-        # ===== 4. ACTUALIZAR ESTADO + EJECUTAR ACCIÓN =====
         if not nextCell:
-            # Sin camino válido → Embotellamiento
             if self.state not in ["WaitingTraffic", "Jammed"]:
                 self.tiempoEnEmbotellamiento = 0
             
             self.tiempoEnEmbotellamiento += 1
             
             if self.tiempoEnEmbotellamiento >= self.paciencia:
-                # ===== ESTADO: JAMMED =====
                 self.state = "Jammed"
                 self.embotellamientosEncontrados += 1
                 
-                # Intentar romper jam
                 if random.random() <= self.probabilidadRomperEmbotellamiento:
                     available = []
                     for cell in self.getVecinos(self.cell):
@@ -300,7 +322,9 @@ class Car(CellAgent):
                     
                     if available:
                         random_cell = random.choice(available)
-                        self.last_direction = self.getDirectionBetweenCells(self.cell, random_cell)
+                        newDir = self.getDirectionBetweenCells(self.cell, random_cell)
+                        self.dirActual = newDir
+                        self.last_direction = newDir
                         self.cell = random_cell
                         self.steps_taken += 1
                         self.calcPathAEstrella()
@@ -309,23 +333,19 @@ class Car(CellAgent):
                 
                 self.steps_since_last_recalc += 1
             else:
-                # ===== ESTADO: WAITING TRAFFIC =====
                 self.state = "WaitingTraffic"
                 self.embotellamientosEncontrados += 1
                 self.steps_since_last_recalc += 1
             
             return
-        
-        # ===== 5. ANALIZAR SIGUIENTE CELDA =====
         has_car, has_red, has_dest, _, has_tl = self.getCellInfo(nextCell)
         
-        # Destino
         if has_dest:
             self.state = "Moving"
             self.tiempoEnEmbotellamiento = 0
-            # Intentar moverse
             if not has_car:
-                self.last_direction = self.getDirectionBetweenCells(self.cell, nextCell)
+                self.dirActual = self.getDirectionBetweenCells(self.cell, nextCell)
+                self.last_direction = self.dirActual
                 if has_tl:
                     self.semaforosFound += 1
                 self.cell = nextCell
@@ -334,14 +354,12 @@ class Car(CellAgent):
                 self.steps_since_last_recalc += 1
             return
         
-        # Semáforo en rojo
         if has_red:
             self.state = "WaitingRedLight"
             self.tiempoEnEmbotellamiento = 0
             self.steps_since_last_recalc += 1
             return
         
-        # Carro bloqueando
         if has_car:
             if self.state not in ["WaitingTraffic", "Jammed"]:
                 self.tiempoEnEmbotellamiento = 0
@@ -349,11 +367,9 @@ class Car(CellAgent):
             self.tiempoEnEmbotellamiento += 1
             
             if self.tiempoEnEmbotellamiento >= self.paciencia:
-                # ===== JAMMED con carro =====
                 self.state = "Jammed"
                 self.embotellamientosEncontrados += 1
                 
-                # Intentar romper jam
                 if random.random() <= self.probabilidadRomperEmbotellamiento:
                     available = []
                     for cell in self.getVecinos(self.cell):
@@ -365,12 +381,13 @@ class Car(CellAgent):
                         _, _, _, my_road_dir, _ = self.getCellInfo(self.cell)
                         if my_road_dir and not self.isValidTurn(my_road_dir, move_dir):
                             continue
-                        
                         available.append(cell)
                     
                     if available:
                         random_cell = random.choice(available)
-                        self.last_direction = self.getDirectionBetweenCells(self.cell, random_cell)
+                        newDir = self.getDirectionBetweenCells(self.cell, random_cell)
+                        self.dirActual = newDir
+                        self.last_direction = newDir
                         self.cell = random_cell
                         self.steps_taken += 1
                         self.calcPathAEstrella()
@@ -379,17 +396,16 @@ class Car(CellAgent):
                 
                 self.steps_since_last_recalc += 1
             else:
-                # ===== WAITING TRAFFIC =====
                 self.state = "WaitingTraffic"
                 self.embotellamientosEncontrados += 1
                 self.steps_since_last_recalc += 1
-            
             return
         
-        # ===== 6. CELDA LIBRE - MOVERSE =====
         self.state = "Moving"
         self.tiempoEnEmbotellamiento = 0
-        self.last_direction = self.getDirectionBetweenCells(self.cell, nextCell)
+        newDir = self.getDirectionBetweenCells(self.cell, nextCell)
+        self.dirActual = newDir
+        self.last_direction = newDir
         
         if has_tl:
             self.semaforosFound += 1

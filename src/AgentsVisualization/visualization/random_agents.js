@@ -89,7 +89,6 @@ async function loadObjFile(url) {
   }
 }
 
-// Main function is async to be able to make the requests
 async function main() {
   // Setup the canvas area
   const canvas = document.querySelector('canvas');
@@ -153,7 +152,7 @@ function setupScene() {
     0.8,              // Elevation
     [0, 0, 10],
     [0, 0, 0]);
-  // These values are empyrical.
+  // These values are empirical.
   // Maybe find a better way to determine them
   camera.panOffset = [0, 8, 0];
   scene.setCamera(camera);
@@ -256,16 +255,17 @@ function setupObjects(scene, gl, programInfo) {
   }
 }
 
-// Add this new function to update scene objects after fetching new positions
+// Optimized function to update scene objects after fetching new positions
 function updateSceneObjects() {
-  // Remove old car objects from scene
-  scene.objects = scene.objects.filter(obj => 
-    !agents.some(agent => agent.id === obj.id) || obj.id < 0
-  );
-
-  // Add/update car objects
+  const currentAgentIds = new Set(agents.map(agent => agent.id));
+  const obstacleIds = new Set(obstacles.map(obs => obs.id));
+  
+  scene.objects = scene.objects.filter(obj => {
+    if (obstacleIds.has(obj.id)) return true;
+    if (obj.id === -1) return true;
+    return currentAgentIds.has(obj.id);
+  });
   for (const agent of agents) {
-    // Check if this agent is already in the scene
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
     if (existingObj) {
@@ -291,17 +291,16 @@ function updateSceneObjects() {
       }
       
       scene.addObject(agent);
+      //console.log(`Added car ${agent.id} at (${agent.posArray[0]}, ${agent.posArray[2]})`);
     }
   }
 }
 
 // Draw an object with its corresponding transformations
 function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
-  // Interpolate position if oldPosArray exists
   let v3_tra = object.posArray;
   
   if (object.oldPosArray && fract < 1.0) {
-    // Smooth interpolation between old and new position
     v3_tra = [
       object.oldPosArray[0] + (object.posArray[0] - object.oldPosArray[0]) * fract,
       object.oldPosArray[1] + (object.posArray[1] - object.oldPosArray[1]) * fract,
@@ -370,14 +369,40 @@ async function drawScene() {
     drawObject(gl, colorProgramInfo, object, viewProjectionMatrix, fract);
   }
 
-  // Update the scene after the elapsed duration
-  if (elapsed >= duration) {
+  // Request update in advance (double buffering)
+  if (elapsed >= duration * 0.7 && !isUpdating && !pendingUpdate) { // Start fetching next frame data when 70% through current animation
+    pendingUpdate = true;
+    updateInBackground();
+  }
+
+  // Apply the buffered update when animation completes
+  if (elapsed >= duration && !isUpdating) {
     elapsed = 0;
-    await update();
-    updateSceneObjects(); // Update scene with new positions
   }
 
   requestAnimationFrame(drawScene);
+}
+
+async function updateInBackground() {
+  if (isUpdating) return;
+  
+  isUpdating = true;
+  try {
+    for (let obj of scene.objects) {
+      if (obj.id > 0) { // Only for cars (positive IDs)
+        obj.oldPosArray = [...obj.posArray];
+      }
+    }
+    
+    await update();
+    updateSceneObjects();
+    
+    pendingUpdate = false;
+  } catch (error) {
+    console.error("Error during background update:", error);
+  } finally {
+    isUpdating = false;
+  }
 }
 
 function setupViewProjection(gl) {

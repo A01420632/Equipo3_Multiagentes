@@ -20,43 +20,31 @@ def random_portrayal(agent):
     )
 
     if isinstance(agent, Car):
-        portrayal.update(("color", "red"))
+        portrayal.update(("color", "black"))
     elif isinstance(agent, Traffic_Light):
         portrayal.update(("color", "green" if agent.state else "red"))
-        portrayal.update(("marker", "s"), ("size", 125), ("zorder", 1))
+        portrayal.update(("marker", "s"), ("size", 25), ("zorder", 1))
     elif isinstance(agent, Obstacle):
         portrayal.update(("color", "gray"))
         portrayal.update(("marker", "s"), ("size", 125), ("zorder", 1))
     elif isinstance(agent, Destination):
         portrayal.update(("color", "blue"))
-        portrayal.update(("marker", "d"), ("size", 125), ("zorder", 1))
+        portrayal.update(("marker", "s"), ("size", 25), ("zorder", 1))
     elif isinstance(agent, Road):
-        portrayal.update(("color", "black"))
-        portrayal.update(("marker", "r"), ("size", 125), ("zorder", 1))
+        portrayal.update(("color", "lightgray"))
+        portrayal.update(("marker", "s"), ("size", 125), ("zorder", 1))
 
     return portrayal
 
-
 model_params = {
-    "seed": {
-        "type": "InputText",
-        "value": 42,
-        "label": "Random Seed",
-    },
-    "num_agents": Slider("Number of agents", 10, 1, 50),
-    "width": Slider("Grid width", 28, 1, 50),
-    "height": Slider("Grid height", 28, 1, 50),
+    "N": Slider("Number of cars", 10, 1, 50, 1),
+    "seed": Slider("Random Seed", 42, 1, 100, 1),
+    "spawnSteps": Slider("Steps between spawns", 10, 1, 50, 1),
 }
 
 
-# Create the model using the initial parameters from the settings
-model = CityModel(
-    num_agents=model_params["num_agents"].value,
-    width=model_params["width"].value,
-    height=model_params["height"].value,
-    seed=model_params["seed"]["value"],
-)
-
+# Crear modelo inicial (instancia, no función)
+model = CityModel(N=10, seed=42, spawnSteps=10)
 renderer = SpaceRenderer(
     model,
     backend="matplotlib",
@@ -68,5 +56,5 @@ page = SolaraViz(
     renderer,
     components=[CommandConsole],
     model_params=model_params,
-    name="Random Model",
+    name="City Traffic Simulation",
 )

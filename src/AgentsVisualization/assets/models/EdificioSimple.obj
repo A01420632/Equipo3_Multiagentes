@@ -1,4 +1,5 @@
 # OBJ file building.obj
+usemtl MCoche
 # 4 vertices
 v 0 0 0
 v 0 80 0

@@ -42,9 +42,9 @@ class Camera3D {
         this.maxElevation = Math.PI / 2 - 0.1;  // Aproximately  90 - 5.7 degrees
 
         // Transformation speeds
-        this.rotationSpeed = 0.02;
-        this.panSpeed = 0.5;
-        this.zoomSpeed = 2.0;
+        this.rotationSpeed = 0.06;
+        this.panSpeed = 0.8;
+        this.zoomSpeed = 4.0;
 
         // Panning variables
         this.panOffset = [0, 0, 0];
@@ -104,7 +104,7 @@ class Camera3D {
     zoom(delta) {
         this.distance += delta * this.zoomSpeed;
         // Limit the near and far distances of the camera
-        this.distance = Math.max(10, Math.min(50, this.distance));
+        this.distance = Math.max(0.01, Math.min(100, this.distance));
     }
 
     setupControls() {

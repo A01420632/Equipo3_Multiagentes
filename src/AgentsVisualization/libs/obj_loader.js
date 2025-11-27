@@ -12,8 +12,9 @@
  * Read the contents of an OBJ file received as a string
  * Return an object called arrays, with the arrays necessary to build a
  * Vertex Array Object (VAO) for WebGL.
+ * @param {boolean} invertFaces - Si es true, invierte el orden de los vértices de las caras
  */
-function loadObj(objString) {
+function loadObj(objString, materials = null, invertFaces = false) {
 
     // The array with the attributes that will be passed to WebGL
     let arrays = {
@@ -39,6 +40,10 @@ function loadObj(objString) {
     const vertices = [];      // Almacena todos los vértices (v)
     const normals = [];       // Almacena todas las normales (vn)
     const texCoords = [];     // Almacena todas las coordenadas de textura (vt)
+    
+    // Track current material being used
+    let currentMaterial = null;
+    let currentMaterialColor = [1, 1, 1, 1]; // Default white
     
     // Dividir el string en líneas
     const lines = objString.split('\n');
@@ -80,9 +85,21 @@ function loadObj(objString) {
         }
     }
     
-    // Segunda pasada: procesar las caras (f)
+    // Segunda pasada: procesar las caras (f) y materiales (usemtl)
     for (let line of lines) {
         line = line.trim();
+        
+        // Check for material usage
+        if (line.startsWith('usemtl ')) {
+            const materialName = line.substring(7).trim();
+            if (materials && materials[materialName]) {
+                currentMaterial = materials[materialName];
+                if (currentMaterial.Kd) {
+                    currentMaterialColor = [...currentMaterial.Kd, 1.0];
+                }
+            }
+            continue;
+        }
         
         if (!line.startsWith('f ')) {
             continue;
@@ -108,8 +125,8 @@ function loadObj(objString) {
         // Triangular la cara (convertir polígonos en triángulos)
         // Si la cara tiene más de 3 vértices, crear múltiples triángulos
         for (let i = 1; i < faceVertices.length - 1; i++) {
-            // Crear triángulo con vértices [0, i, i+1]
-            const triangleIndices = [0, i, i + 1];
+            // Invertir el orden si invertFaces es true
+            const triangleIndices = invertFaces ? [0, i, i+1] : [0, i+1, i];
             
             for (let idx of triangleIndices) {
                 const faceVertex = faceVertices[idx];
@@ -135,8 +152,8 @@ function loadObj(objString) {
                     arrays.a_texCoord.data.push(0, 0);
                 }
                 
-                // Agregar color por defecto (blanco)
-                arrays.a_color.data.push(1, 1, 1, 1);
+                // Agregar color del material actual
+                arrays.a_color.data.push(...currentMaterialColor);
             }
         }
     }
@@ -156,10 +173,61 @@ function loadObj(objString) {
  * Return an object containing all the materials described inside,
  * with their illumination attributes.
  */
+let materials = {};
+let materialInUse = undefined;
+
 function loadMtl(mtlString) {
+    const materials= {};
+    let currentMtl = {};
 
+    let partInfo;
+    let lines = mtlString.split('\n');
+    lines.forEach(line => {
+        line= line.trim();
 
-    return /* SOMETHING */;
+        if (line.startsWith('#') || line.length === 0) {
+            return;
+        }
+        
+        let parts = line.split(/\s+/);
+
+        switch (parts[0]) {
+            case 'newmtl':
+                // Add a new entry into the object
+                materials[parts[1]] = {};
+                currentMtl = materials[parts[1]];
+                break;
+            case 'Ns':  // Specular coefficient ("Shininess")
+                currentMtl['Ns'] = Number(parts[1]);
+                break;
+            case 'Kd':  // The specular color
+                partInfo = parts.slice(1).filter(v => v != '').map(Number);
+                currentMtl['Kd'] = partInfo;
+                break;
+            case 'Ks':  // Specular color
+                partInfo = parts.slice(1).filter(v => v != '').map(Number);
+                currentMtl['Ks'] = partInfo;
+                break;
+            case 'Ke':  // Emissive color
+                partInfo = parts.slice(1).filter(v => v != '').map(Number);
+                currentMtl['Ke'] = partInfo;
+                break;
+            case 'd':   // Transparency (dissolve)
+                currentMtl['d'] = Number(parts[1]);
+                break;
+            case 'Tr':  // Transparency (alternative)
+                currentMtl['Tr'] = Number(parts[1]);
+                break;
+            case 'illum': // Illumination model
+                currentMtl['illum'] = Number(parts[1]);
+                break;
+            case 'map_Kd': // Diffuse texture map
+                currentMtl['map_Kd'] = parts[1];
+                break;
+        }
+    });
+
+    return materials;
 }
 
 export { loadObj, loadMtl };

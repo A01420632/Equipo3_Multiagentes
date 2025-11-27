@@ -1,0 +1,921 @@
+api_connection.js
+/*
+ * Functions to connect to an external API to get the coordinates of agents
+ *
+ * Gilberto Echeverria
+ * 2025-11-08
+ */
+
+'use strict';
+
+import { Object3D } from '../libs/object3d';
+
+const agent_server_uri = "http://localhost:8585/";
+
+const agents = [];
+const obstacles = [];
+const trafficLights = [];
+const roads = [];
+const destinations = [];
+
+// Define the data object
+const initData = {
+    NAgents: 20,
+    width: 28,
+    height: 28
+};
+
+/*
+ * Initializes the agents model by sending a POST request to the agent server.
+ */
+async function initAgentsModel() {
+    try {
+        let response = await fetch(agent_server_uri + "init", {
+            method: 'POST',
+            headers: { 'Content-Type':'application/json' },
+            body: JSON.stringify(initData)
+        });
+
+        if (response.ok) {
+            let result = await response.json();
+            console.log(result.message);
+        }
+
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/*
+ * Retrieves the current positions of all agents from the agent server.
+ */
+async function getCars() {
+    try {
+        let response = await fetch(agent_server_uri + "getCars");
+
+        if (response.ok) {
+            let result = await response.json();
+
+            // Check if the agents array is empty
+            if (agents.length == 0) {
+                // Create new agents and add them to the agents array
+                for (const agent of result.positions) {
+                    const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
+                    newCar['oldPosArray'] = newCar.posArray;
+                    agents.push(newCar);
+                }
+            } else {
+                // Update the positions of existing agents
+                for (const agent of result.positions) {
+                    const current_agent = agents.find((object3d) => object3d.id == agent.id);
+
+                    if(current_agent != undefined){
+                        // Update the agent's position using the setter
+                        current_agent.oldPosArray = current_agent.posArray;
+                        current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
+                    }
+                }
+            }
+        }
+
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/*
+ * Retrieves the current positions of all traffic lights from the agent server.
+ */
+async function getLights() {
+    try {
+        let response = await fetch(agent_server_uri + "getLights");
+
+        if (response.ok) {
+            let result = await response.json();
+
+            // Only create lights once
+            if (trafficLights.length == 0) {
+                for (const light of result.positions) {
+                    const newLight = new Object3D(light.id, [light.x, light.y, light.z]);
+                    newLight.state = light.state;
+                    trafficLights.push(newLight);
+                }
+            } else {
+                // Update state of existing lights
+                for (const light of result.positions) {
+                    const existing = trafficLights.find(l => l.id == light.id);
+                    if (existing) {
+                        existing.state = light.state;
+                    }
+                }
+            }
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/*
+ * Retrieves the current positions of all obstacles from the agent server.
+ */
+async function getObstacles() {
+    try {
+        let response = await fetch(agent_server_uri + "getObstacles");
+
+        if (response.ok) {
+            let result = await response.json();
+
+            for (const obstacle of result.positions) {
+                const newObstacle = new Object3D(obstacle.id, [obstacle.x, obstacle.y, obstacle.z]);
+                obstacles.push(newObstacle);
+            }
+            
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/*
+ * Retrieves the current positions of all destinations from the agent server.
+ */
+async function getDestination() {
+    try {
+        let response = await fetch(agent_server_uri + "getDestination");
+
+        if (response.ok) {
+            let result = await response.json();
+
+            for (const destination of result.positions) {
+                const newDestination = new Object3D(destination.id, [destination.x, destination.y, destination.z]);
+                destinations.push(newDestination);
+            }
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/*
+ * Retrieves the current positions of all roads from the agent server.
+ */
+async function getRoads() {
+    try {
+        let response = await fetch(agent_server_uri + "getRoads");
+
+        if (response.ok) {
+            let result = await response.json();
+
+            for (const road of result.positions) {
+                const newRoad = new Object3D(road.id, [road.x, road.y, road.z]);
+                roads.push(newRoad);
+            }
+        }
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+/*
+ * Updates the agent positions by sending a request to the agent server.
+ */
+async function update() {
+    try {
+        let response = await fetch(agent_server_uri + "update");
+
+        if (response.ok) {
+            await getCars();
+            console.log("Updated agents");
+        }
+
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+export { agents, obstacles, trafficLights, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };
+
+
+agents_server.py
+# TC2008B. Sistemas Multiagentes y Gráficas Computacionales
+# Python flask server to interact with webGL.
+# Octavio Navarro. 2024
+
+from flask import Flask, request, jsonify
+from flask_cors import CORS, cross_origin
+from randomAgents.model import CityModel
+from randomAgents.agent import Car, Traffic_Light, Obstacle, Destination, Road
+
+# Size of the board:
+number_agents = 10
+width = 28
+height = 28
+cityModel = None
+currentStep = 0
+
+# This application will be used to interact with WebGL
+app = Flask("Traffic example")
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# This route will be used to send the parameters of the simulation to the server.
+# The servers expects a POST request with the parameters in a.json.
+@app.route('/init', methods=['GET', 'POST'])
+@cross_origin()
+def initModel():
+    global currentStep, cityModel, number_agents, width, height
+
+    if request.method == 'POST':
+        try:
+            number_agents = int(request.json.get('NAgents'))
+            width = int(request.json.get('width'))
+            height = int(request.json.get('height'))
+            currentStep = 0
+
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error initializing the model"}), 500
+
+    print(f"Model parameters:{number_agents, width, height}")
+
+    # Create the model using the parameters sent by the application
+    cityModel = CityModel(number_agents,42,10)  # <------------------------- seed ?
+
+    # Return a message to saying that the model was created successfully
+    return jsonify({"message": f"Parameters recieved, model initiated.\nSize: {width}x{height}"})
+
+
+# This route will be used to get the positions of the agents
+@app.route('/getCars', methods=['GET'])
+@cross_origin()
+def getCars():
+    global cityModel
+
+    if request.method == 'GET':
+        # Get the positions of the agents and return them to WebGL in JSON.json.t.
+        # Note that the positions are sent as a list of dictionaries, where each dictionary has the id and position of an agent.
+        # The y coordinate is set to 1, since the agents are in a 3D world. The z coordinate corresponds to the row (y coordinate) of the grid in mesa.
+        try:
+            agentCells = cityModel.grid.all_cells.select(
+                lambda cell: any(isinstance(obj, Car) for obj in cell.agents)
+            ).cells
+            # print(f"CELLS: {agentCells}")
+
+            agents = [
+                (cell.coordinate, agent)
+                for cell in agentCells
+                for agent in cell.agents
+                if isinstance(agent, Car)
+            ]
+            # print(f"AGENTS: {agents}")
+
+            agentPositions = [
+                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
+                for (coordinate, a) in agents
+            ]
+            # print(f"AGENT POSITIONS: {agentPositions}")
+
+            return jsonify({'positions': agentPositions})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error with the agent positions"}), 500
+
+@app.route('/getLights', methods=['GET'])
+@cross_origin()
+def getLights():
+    global cityModel
+
+    if request.method == 'GET':
+        # Get the positions of the agents and return them to WebGL in JSON.json.t.
+        # Note that the positions are sent as a list of dictionaries, where each dictionary has the id and position of an agent.
+        # The y coordinate is set to 1, since the agents are in a 3D world. The z coordinate corresponds to the row (y coordinate) of the grid in mesa.
+        try:
+            agentCells = cityModel.grid.all_cells.select(
+                lambda cell: any(isinstance(obj, Traffic_Light) for obj in cell.agents)
+            ).cells
+            # print(f"CELLS: {agentCells}")
+
+            agents = [
+                (cell.coordinate, agent)
+                for cell in agentCells
+                for agent in cell.agents
+                if isinstance(agent, Traffic_Light)
+            ]
+            # print(f"AGENTS: {agents}")
+
+            agentPositions = [
+                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1], "state": a.state}
+                for (coordinate, a) in agents
+            ]
+            # print(f"AGENT POSITIONS: {agentPositions}")
+
+            return jsonify({'positions': agentPositions})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error with the agent positions"}), 500
+
+
+# This route will be used to get the positions of the obstacles
+@app.route('/getObstacles', methods=['GET'])
+@cross_origin()
+def getObstacles():
+    global cityModel
+
+    if request.method == 'GET':
+        try:
+            # Get the positions of the obstacles and return them to WebGL in JSON.json.t.
+            # Same as before, the positions are sent as a list of dictionaries, where each dictionary has the id and position of an obstacle.
+
+            obstacleCells = cityModel.grid.all_cells.select(
+                lambda cell: any(isinstance(obj, Obstacle) for obj in cell.agents)
+            )
+            # print(f"CELLS: {agentCells}")
+
+            agents = [
+                (cell.coordinate, agent)
+                for cell in obstacleCells
+                for agent in cell.agents
+                if isinstance(agent, Obstacle)
+            ]
+            # print(f"AGENTS: {agents}")
+
+            obstaclePositions = [
+                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
+                for (coordinate, a) in agents
+            ]
+            # print(f"OBSTACLE POSITIONS: {obstaclePositions}")
+
+            return jsonify({'positions': obstaclePositions})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error with obstacle positions"}), 500
+
+# This route will be used to get the positions of the destinations
+@app.route('/getDestination', methods=['GET'])
+@cross_origin()
+def getDestinations():
+    global cityModel
+
+    if request.method == 'GET':
+        try:
+            destinationCells = cityModel.grid.all_cells.select(
+                lambda cell: any(isinstance(obj, Destination) for obj in cell.agents)
+            )
+
+            agents = [
+                (cell.coordinate, agent)
+                for cell in destinationCells
+                for agent in cell.agents
+                if isinstance(agent, Destination)
+            ]
+
+            destinationPositions = [
+                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
+                for (coordinate, a) in agents
+            ]
+
+            return jsonify({'positions': destinationPositions})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error with destination positions"}), 500
+
+# This route will be used to get the positions of the roads
+@app.route('/getRoads', methods=['GET'])
+@cross_origin()
+def getRoads():
+    global cityModel
+
+    if request.method == 'GET':
+        try:
+            roadCells = cityModel.grid.all_cells.select(
+                lambda cell: any(isinstance(obj, Road) for obj in cell.agents)
+            )
+
+            agents = [
+                (cell.coordinate, agent)
+                for cell in roadCells
+                for agent in cell.agents
+                if isinstance(agent, Road)
+            ]
+
+            roadPositions = [
+                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
+                for (coordinate, a) in agents
+            ]
+
+            return jsonify({'positions': roadPositions})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error with road positions"}), 500
+
+
+@app.route('/update', methods=['GET'])
+@cross_origin()
+def updateModel():
+    global currentStep, cityModel
+    if request.method == 'GET':
+        try:
+            cityModel.step()
+            currentStep += 1
+            return jsonify({'message': f'Model updated to step {currentStep}.', 'currentStep':currentStep})
+        except Exception as e:
+            print(e)
+            return jsonify({"message": "Error during step."}), 500
+
+
+if __name__=='__main__':
+    # Run the flask server in port 8585
+    app.run(host="localhost", port=8585, debug=True)
+
+
+
+randon_agents.js
+/*
+ * Base program for a 3D scene that connects to an API to get the movement
+ * of agents.
+ * The scene shows colored cubes
+ *
+ * Gilberto Echeverria
+ * 2025-11-08
+ */
+
+
+'use strict';
+
+import * as twgl from 'twgl-base.js';
+import GUI from 'lil-gui';
+import { M4 } from '../libs/3d-lib';
+import { Scene3D } from '../libs/scene3d';
+import { Object3D } from '../libs/object3d';
+import { Camera3D } from '../libs/camera3d';
+import { loadMtl } from '../libs/obj_loader';
+
+// Functions and arrays for the communication with the API
+import {
+  agents, obstacles, trafficLights, initAgentsModel,
+  update, getCars, getLights, getDestination, getRoads, getObstacles
+} from '../libs/api_connection.js';
+
+// Define the shader code, using GLSL 3.00
+import vsGLSL from '../assets/shaders/vs_color.glsl?raw';
+import fsGLSL from '../assets/shaders/fs_color.glsl?raw';
+
+const scene = new Scene3D();
+
+/*
+// Variable for the scene settings
+const settings = {
+    // Speed in degrees
+    rotationSpeed: {
+        x: 0,
+        y: 0,
+        z: 0,
+    },
+};
+*/
+
+
+// Global variables
+let colorProgramInfo = undefined;
+let gl = undefined;
+const duration = 1000; // ms
+let elapsed = 0;
+let then = 0;
+
+// Global variables for OBJ models
+let carObjData = null;
+let buildingObjData = null;
+let trafficLightObjData = null;
+
+// Global variables for MTL materials
+let carMaterials = null;
+let buildingMaterials = null;
+let trafficLightMaterials = null;
+
+// Function to load OBJ files with optional MTL
+async function loadObjFile(url) {
+  try {
+    const response = await fetch(url);
+    const text = await response.text();
+    console.log(`Successfully loaded OBJ from ${url}`);
+    
+    // Try to load corresponding MTL file
+    const mtlUrl = url.replace('.obj', '.mtl');
+    let materials = null;
+    
+    try {
+      const mtlResponse = await fetch(mtlUrl);
+      if (mtlResponse.ok) {
+        const mtlText = await mtlResponse.text();
+        materials = loadMtl(mtlText);
+        console.log(`Successfully loaded MTL from ${mtlUrl}`, materials);
+      }
+    } catch (mtlError) {
+      console.log(`No MTL file found for ${url}`);
+    }
+    
+    return { objData: text, materials: materials };
+  } catch (error) {
+    console.error(`Error loading OBJ file from ${url}:`, error);
+    return null;
+  }
+}
+
+// Main function is async to be able to make the requests
+async function main() {
+  // Setup the canvas area
+  const canvas = document.querySelector('canvas');
+  gl = canvas.getContext('webgl2');
+  twgl.resizeCanvasToDisplaySize(gl.canvas);
+  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+
+  // Prepare the program with the shaders
+  colorProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+
+  // Load OBJ models from assets folder
+  console.log('Loading OBJ models...');
+  const carData = await loadObjFile('../assets/models/car2.obj');
+  const buildingData = await loadObjFile('../assets/models/EdificioSimple.obj');
+  const trafficLightData = await loadObjFile('../assets/models/Semaforo.obj');
+  
+  // Extract OBJ data and materials
+  carObjData = carData ? carData.objData : null;
+  buildingObjData = buildingData ? buildingData.objData : null;
+  trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
+  
+  carMaterials = carData ? carData.materials : null;
+  buildingMaterials = buildingData ? buildingData.materials : null;
+  trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
+  
+  console.log('OBJ models and materials loaded');
+  if (carMaterials) console.log('Car materials:', carMaterials);
+  if (buildingMaterials) console.log('Building materials:', buildingMaterials);
+  if (trafficLightMaterials) console.log('Traffic light materials:', trafficLightMaterials);
+
+  // Initialize the agents model
+  await initAgentsModel();
+
+  // Get the agents and obstacles
+  await getCars();
+  await getLights();
+  await getDestination();
+  await getObstacles();
+  await getRoads();
+
+
+  // Initialize the scene
+  setupScene();
+
+  // Position the objects in the scene
+  setupObjects(scene, gl, colorProgramInfo);
+
+  // Prepare the user interface
+  setupUI();
+
+  // Fisrt call to the drawing loop
+  drawScene();
+}
+
+
+
+function setupScene() {
+  let camera = new Camera3D(0,
+    10,             // Distance to target
+    4,              // Azimut
+    0.8,              // Elevation
+    [0, 0, 10],
+    [0, 0, 0]);
+  // These values are empyrical.
+  // Maybe find a better way to determine them
+  camera.panOffset = [0, 8, 0];
+  scene.setCamera(camera);
+  scene.camera.setupControls();
+}
+
+function setupObjects(scene, gl, programInfo) {
+  // Create VAOs for the different shapes
+  const baseCube = new Object3D(-1);
+  baseCube.prepareVAO(gl, programInfo);
+
+  // Create car model from OBJ
+  const baseCar = new Object3D(-2);
+  if (carObjData) {
+    baseCar.prepareVAO(gl, programInfo, carObjData, carMaterials);
+    console.log('Car model loaded successfully');
+  } else {
+    baseCar.prepareVAO(gl, programInfo); // Fallback to cube
+    console.log('Using default cube for cars');
+  }
+
+  // Create building model from OBJ
+  const baseBuilding = new Object3D(-3);
+  if (buildingObjData) {
+    baseBuilding.prepareVAO(gl, programInfo, buildingObjData, buildingMaterials);
+    console.log('Building model loaded successfully');
+  } else {
+    baseBuilding.prepareVAO(gl, programInfo); // Fallback to cube
+    console.log('Using default cube for buildings');
+  }
+
+  // Create traffic light models - RED and GREEN versions
+  const baseTrafficLightRed = new Object3D(-4);
+  const baseTrafficLightGreen = new Object3D(-5);
+  
+  if (trafficLightObjData) {
+    baseTrafficLightRed.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterials);
+    baseTrafficLightGreen.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterials);
+    
+    // Modify colors if data is available
+    if (trafficLightObjData.a_color && trafficLightObjData.a_color.data) {
+      const redColor = trafficLightMaterials?.['Mat_Rojo']?.Kd || [1, 0, 0];
+      const greenColor = trafficLightMaterials?.['Mat_Verde']?.Kd || [0, 1, 0];
+      const bodyColor = trafficLightMaterials?.['Mat.1']?.Kd || [0.5, 0.5, 0.5];
+      
+      // Create RED version
+      const redObjData = JSON.parse(JSON.stringify(trafficLightObjData));
+      for (let i = 0; i < redObjData.a_color.data.length; i += 3) {
+        const vertexIndex = i / 3;
+        const totalVertices = redObjData.a_color.data.length / 3;
+        
+        if (vertexIndex < totalVertices * 0.7) {
+          redObjData.a_color.data[i] = bodyColor[0];
+          redObjData.a_color.data[i + 1] = bodyColor[1];
+          redObjData.a_color.data[i + 2] = bodyColor[2];
+        } else {
+          const lightSection = Math.floor((vertexIndex - totalVertices * 0.7) / (totalVertices * 0.1));
+          if (lightSection === 0) {
+            redObjData.a_color.data[i] = redColor[0];
+            redObjData.a_color.data[i + 1] = redColor[1];
+            redObjData.a_color.data[i + 2] = redColor[2];
+          } else {
+            redObjData.a_color.data[i] = 0.1;
+            redObjData.a_color.data[i + 1] = 0.1;
+            redObjData.a_color.data[i + 2] = 0.1;
+          }
+        }
+      }
+      
+      // Create GREEN version
+      const greenObjData = JSON.parse(JSON.stringify(trafficLightObjData));
+      for (let i = 0; i < greenObjData.a_color.data.length; i += 3) {
+        const vertexIndex = i / 3;
+        const totalVertices = greenObjData.a_color.data.length / 3;
+        
+        if (vertexIndex < totalVertices * 0.7) {
+          greenObjData.a_color.data[i] = bodyColor[0];
+          greenObjData.a_color.data[i + 1] = bodyColor[1];
+          greenObjData.a_color.data[i + 2] = bodyColor[2];
+        } else {
+          const lightSection = Math.floor((vertexIndex - totalVertices * 0.7) / (totalVertices * 0.1));
+          if (lightSection === 2) {
+            greenObjData.a_color.data[i] = greenColor[0];
+            greenObjData.a_color.data[i + 1] = greenColor[1];
+            greenObjData.a_color.data[i + 2] = greenColor[2];
+          } else {
+            greenObjData.a_color.data[i] = 0.1;
+            greenObjData.a_color.data[i + 1] = 0.1;
+            greenObjData.a_color.data[i + 2] = 0.1;
+          }
+        }
+      }
+      
+      baseTrafficLightRed.prepareVAO(gl, programInfo, redObjData, trafficLightMaterials);
+      baseTrafficLightGreen.prepareVAO(gl, programInfo, greenObjData, trafficLightMaterials);
+    }
+    console.log('Traffic light models loaded (red & green versions)');
+  } else {
+    baseTrafficLightRed.prepareVAO(gl, programInfo);
+    baseTrafficLightGreen.prepareVAO(gl, programInfo);
+    console.log('Using default cube for traffic lights');
+  }
+
+  // Store the base models for later use
+  scene.baseCube = baseCube;
+  scene.baseCar = baseCar;
+  scene.baseBuilding = baseBuilding;
+  scene.baseTrafficLightRed = baseTrafficLightRed;
+  scene.baseTrafficLightGreen = baseTrafficLightGreen;
+
+  // Setup cars with car model
+  for (const agent of agents) {
+    agent.arrays = baseCar.arrays;
+    agent.bufferInfo = baseCar.bufferInfo;
+    agent.vao = baseCar.vao;
+    agent.scale = { x: 0.2, y: 0.2, z: 0.2 };
+    
+    // Apply color from MTL if available
+    if (carMaterials && Object.keys(carMaterials).length > 0) {
+      const firstMaterial = Object.values(carMaterials)[0];
+      if (firstMaterial && firstMaterial.Kd) {
+        agent.color = [...firstMaterial.Kd, 1.0];
+      } else {
+        agent.color = [1.0, 0.0, 0.0, 1.0]; // Red fallback
+      }
+    } else {
+      agent.color = [1.0, 0.0, 0.0, 1.0]; // Red fallback
+    }
+    
+    scene.addObject(agent);
+  }
+
+  // Setup obstacles (buildings) with building model
+  for (const agent of obstacles) {
+    agent.arrays = baseBuilding.arrays;
+    agent.bufferInfo = baseBuilding.bufferInfo;
+    agent.vao = baseBuilding.vao;
+    agent.scale = { x: 0.03, y: 0.05, z: 0.03 } //{ x: 0.01, y: 0.03, z: 0.01 }; // Ajusta estos valores según necesites
+    agent.color = [0.7, 0.7, 0.7, 1.0];
+    scene.addObject(agent);
+  }
+
+  // Setup traffic lights with traffic light model
+  for (const light of trafficLights) {
+    // Always use the same base model but change color
+    light.arrays = scene.baseTrafficLightRed.arrays;
+    light.bufferInfo = scene.baseTrafficLightRed.bufferInfo;
+    light.vao = scene.baseTrafficLightRed.vao;
+    light.scale = { x: 0.01, y: 0.01, z: 0.01 };
+    
+    // Set color based on state (true = green, false = red)
+    if (light.state) {
+      light.color = [0.0, 1.5, 0.0, 1.0]; // Green brighter
+    } else {
+      light.color = [1.5, 0.0, 0.0, 1.0]; // Red brighter
+    }
+    
+    scene.addObject(light);
+  }
+}
+
+// Add this new function to update scene objects after fetching new positions
+function updateSceneObjects() {
+  // Remove old car objects from scene
+  scene.objects = scene.objects.filter(obj => 
+    !agents.some(agent => agent.id === obj.id) || obj.id < 0
+  );
+
+  // Add/update car objects
+  for (const agent of agents) {
+    // Check if this agent is already in the scene
+    const existingObj = scene.objects.find(obj => obj.id === agent.id);
+    
+    if (existingObj) {
+      // Update position of existing object
+      existingObj.posArray = agent.posArray;
+    } else {
+      // Add new object to scene with car model
+      agent.arrays = scene.baseCar.arrays;
+      agent.bufferInfo = scene.baseCar.bufferInfo;
+      agent.vao = scene.baseCar.vao;
+      agent.scale = { x: 0.3, y: 0.3, z: 0.3 };
+      
+      // Apply color from MTL if available
+      if (carMaterials && Object.keys(carMaterials).length > 0) {
+        const firstMaterial = Object.values(carMaterials)[0];
+        if (firstMaterial && firstMaterial.Kd) {
+          agent.color = [...firstMaterial.Kd, 1.0];
+        } else {
+          agent.color = [1.0, 0.0, 0.0, 1.0];
+        }
+      } else {
+        agent.color = [1.0, 0.0, 0.0, 1.0];
+      }
+      
+      scene.addObject(agent);
+    }
+  }
+  
+  // Update traffic light colors based on state
+  for (const light of trafficLights) {
+    const existingLight = scene.objects.find(obj => obj.id === light.id);
+    if (existingLight) {
+      // Just update the color uniform
+      if (light.state) {
+        existingLight.color = [0.0, 1.5, 0.0, 1.0]; // Green
+      } else {
+        existingLight.color = [1.5, 0.0, 0.0, 1.0]; // Red
+      }
+    }
+  }
+}
+
+// Draw an object with its corresponding transformations
+function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
+  // Interpolate position if oldPosArray exists
+  let v3_tra = object.posArray;
+  
+  if (object.oldPosArray && fract < 1.0) {
+    // Smooth interpolation between old and new position
+    v3_tra = [
+      object.oldPosArray[0] + (object.posArray[0] - object.oldPosArray[0]) * fract,
+      object.oldPosArray[1] + (object.posArray[1] - object.oldPosArray[1]) * fract,
+      object.oldPosArray[2] + (object.posArray[2] - object.oldPosArray[2]) * fract
+    ];
+  }
+  
+  let v3_sca = object.scaArray;
+
+  // Create the individual transform matrices
+  const scaMat = M4.scale(v3_sca);
+  const rotXMat = M4.rotationX(object.rotRad.x);
+  const rotYMat = M4.rotationY(object.rotRad.y);
+  const rotZMat = M4.rotationZ(object.rotRad.z);
+  const traMat = M4.translation(v3_tra);
+
+  // Create the composite matrix with all transformations
+  let transforms = M4.identity();
+  transforms = M4.multiply(scaMat, transforms);
+  transforms = M4.multiply(rotXMat, transforms);
+  transforms = M4.multiply(rotYMat, transforms);
+  transforms = M4.multiply(rotZMat, transforms);
+  transforms = M4.multiply(traMat, transforms);
+
+  object.matrix = transforms;
+
+  // Apply the projection to the final matrix for the
+  // World-View-Projection
+  const wvpMat = M4.multiply(viewProjectionMatrix, transforms);
+
+  // Model uniforms
+  let objectUniforms = {
+    u_transforms: wvpMat,
+    u_color: object.color || [1.0, 1.0, 1.0, 1.0]
+  }
+  twgl.setUniforms(programInfo, objectUniforms);
+  
+
+  gl.bindVertexArray(object.vao);
+  twgl.drawBufferInfo(gl, object.bufferInfo);
+}
+
+// Function to do the actual display of the objects
+async function drawScene() {
+  // Compute time elapsed since last frame
+  let now = Date.now();
+  let deltaTime = now - then;
+  elapsed += deltaTime;
+  let fract = Math.min(1.0, elapsed / duration);
+  then = now;
+
+  // Clear the canvas
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  // tell webgl to cull faces
+  gl.enable(gl.CULL_FACE);
+  gl.enable(gl.DEPTH_TEST);
+
+  scene.camera.checkKeys();
+  const viewProjectionMatrix = setupViewProjection(gl);
+
+  // Draw the objects
+  gl.useProgram(colorProgramInfo.program);
+  for (let object of scene.objects) {
+    drawObject(gl, colorProgramInfo, object, viewProjectionMatrix, fract);
+  }
+
+  // Update the scene after the elapsed duration
+  if (elapsed >= duration) {
+    elapsed = 0;
+    await update();
+    updateSceneObjects(); // Update scene with new positions
+  }
+
+  requestAnimationFrame(drawScene);
+}
+
+function setupViewProjection(gl) {
+  // Field of view of 60 degrees vertically, in radians
+  const fov = 60 * Math.PI / 180;
+  const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+
+  // Matrices for the world view
+  const projectionMatrix = M4.perspective(fov, aspect, 1, 200);
+
+  const cameraPosition = scene.camera.posArray;
+  const target = scene.camera.targetArray;
+  const up = [0, 1, 0];
+
+  const cameraMatrix = M4.lookAt(cameraPosition, target, up);
+  const viewMatrix = M4.inverse(cameraMatrix);
+  const viewProjectionMatrix = M4.multiply(projectionMatrix, viewMatrix);
+
+  return viewProjectionMatrix;
+}
+
+// Setup a ui.
+function setupUI() {
+  /*
+  const gui = new GUI();
+
+  // Settings for the animation
+  const animFolder = gui.addFolder('Animation:');
+  animFolder.add( settings.rotationSpeed, 'x', 0, 360)
+      .decimals(2)
+  animFolder.add( settings.rotationSpeed, 'y', 0, 360)
+      .decimals(2)
+  animFolder.add( settings.rotationSpeed, 'z', 0, 360)
+      .decimals(2)
+  */
+}
+
+main();

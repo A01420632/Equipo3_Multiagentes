@@ -37,7 +37,7 @@ async function initAgentsModel() {
 
         if (response.ok) {
             let result = await response.json();
-            console.log(result.message);
+            //console.log(result.message);
         }
 
     } catch (error) {
@@ -54,25 +54,26 @@ async function getCars() {
 
         if (response.ok) {
             let result = await response.json();
-
-            // Check if the agents array is empty
-            if (agents.length == 0) {
-                // Create new agents and add them to the agents array
-                for (const agent of result.positions) {
-                    const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
-                    newCar['oldPosArray'] = newCar.posArray;
-                    agents.push(newCar);
+            const serverAgentIds = new Set(result.positions.map(agent => agent.id));
+            
+            for (let i = agents.length - 1; i >= 0; i--) {
+                if (!serverAgentIds.has(agents[i].id)) {
+                    //console.log(`Car ${agents[i].id} removed (reached destination)`);
+                    agents.splice(i, 1);
                 }
-            } else {
-                // Update the positions of existing agents
-                for (const agent of result.positions) {
-                    const current_agent = agents.find((object3d) => object3d.id == agent.id);
+            }
 
-                    if(current_agent != undefined){
-                        // Update the agent's position using the setter
-                        current_agent.oldPosArray = current_agent.posArray;
-                        current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
-                    }
+            for (const agent of result.positions) {
+                const current_agent = agents.find((object3d) => object3d.id == agent.id);
+
+                if(current_agent != undefined){
+                    current_agent.oldPosArray = [...current_agent.posArray];
+                    current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
+                } else {
+                    const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
+                    newCar.oldPosArray = [...newCar.posArray];
+                    agents.push(newCar);
+                    //console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
                 }
             }
         }
@@ -92,8 +93,7 @@ async function getLights() {
         if (response.ok) {
             let result = await response.json();
 
-            // Only create lights once
-            if (trafficLights.length == 0) {
+            if (obstacles.length == 0) {
                 for (const light of result.positions) {
                     const newLight = new Object3D(light.id, [light.x, light.y, light.z]);
                     trafficLights.push(newLight);
@@ -175,7 +175,8 @@ async function update() {
 
         if (response.ok) {
             await getCars();
-            console.log("Updated agents");
+            await getLights();
+          //  console.log("Updated agents");
         }
 
     } catch (error) {
@@ -183,4 +184,4 @@ async function update() {
     }
 }
 
-export { agents, obstacles, trafficLights, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };
+export { agents, obstacles, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };

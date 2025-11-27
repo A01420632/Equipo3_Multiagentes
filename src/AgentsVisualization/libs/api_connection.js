@@ -53,16 +53,24 @@ async function getCars() {
 
         if (response.ok) {
             let result = await response.json();
+            const serverAgentIds = new Set(result.positions.map(agent => agent.id));
+            
+            for (let i = agents.length - 1; i >= 0; i--) {
+                if (!serverAgentIds.has(agents[i].id)) {
+                    console.log(`Car ${agents[i].id} removed (reached destination)`);
+                    agents.splice(i, 1);
+                }
+            }
 
             for (const agent of result.positions) {
                 const current_agent = agents.find((object3d) => object3d.id == agent.id);
 
                 if(current_agent != undefined){
-                    current_agent.oldPosArray = current_agent.posArray;
+                    current_agent.oldPosArray = [...current_agent.posArray];
                     current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
                 } else {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
-                    newCar['oldPosArray'] = newCar.posArray;
+                    newCar.oldPosArray = [...newCar.posArray];
                     agents.push(newCar);
                     console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
                 }
@@ -84,7 +92,6 @@ async function getLights() {
         if (response.ok) {
             let result = await response.json();
 
-            // Only create lights once
             if (obstacles.length == 0) {
                 for (const light of result.positions) {
                     const newLight = new Object3D(light.id, [light.x, light.y, light.z]);

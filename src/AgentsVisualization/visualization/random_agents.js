@@ -158,7 +158,7 @@ function updateSceneObjects() {
       agent.color = [1.0, 0.0, 0.0, 1.0]; // Red for cars
       agent.oldPosArray = [...agent.posArray]; // Initialize old position
       scene.addObject(agent);
-      console.log(`Added car ${agent.id} at (${agent.posArray[0]}, ${agent.posArray[2]})`);
+      //console.log(`Added car ${agent.id} at (${agent.posArray[0]}, ${agent.posArray[2]})`);
     }
   }
 }

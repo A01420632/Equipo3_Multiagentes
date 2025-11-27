@@ -36,7 +36,7 @@ async function initAgentsModel() {
 
         if (response.ok) {
             let result = await response.json();
-            console.log(result.message);
+            //console.log(result.message);
         }
 
     } catch (error) {
@@ -57,7 +57,7 @@ async function getCars() {
             
             for (let i = agents.length - 1; i >= 0; i--) {
                 if (!serverAgentIds.has(agents[i].id)) {
-                    console.log(`Car ${agents[i].id} removed (reached destination)`);
+                    //console.log(`Car ${agents[i].id} removed (reached destination)`);
                     agents.splice(i, 1);
                 }
             }
@@ -72,7 +72,7 @@ async function getCars() {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
                     newCar.oldPosArray = [...newCar.posArray];
                     agents.push(newCar);
-                    console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
+                    //console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
                 }
             }
         }
@@ -175,7 +175,7 @@ async function update() {
         if (response.ok) {
             await getCars();
             await getLights();
-            console.log("Updated agents");
+          //  console.log("Updated agents");
         }
 
     } catch (error) {

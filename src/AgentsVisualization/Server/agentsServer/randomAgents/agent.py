@@ -1,16 +1,10 @@
 from mesa.discrete_space import CellAgent, FixedAgent
 import heapq
+import random
 
 class Car(CellAgent):
     
     def __init__(self, model, cell, unique_id, dest = None):
-        """
-        Creates a new car agent.
-        Args:
-            model: Model reference for the agent
-            cell: Reference to its position within the grid
-            unique_id: The agent's ID
-        """
         super().__init__(model)
         self.cell = cell
         self.steps_taken = 0
@@ -24,359 +18,389 @@ class Car(CellAgent):
         self.weightCars = 3.0
         self.weightLights = 2.0
         
-        # Supermetricas
-        self.traffic_lights_encountered = 0
-        self.times_waited_in_traffic = 0
+        self.semaforosFound = 0
+        self.embotellamientosEncontrados = 0
+        self.tiempoEnEmbotellamiento = 0
+        
+        self.paciencia = 3
+        self.probabilidadRomperEmbotellamiento = 0.3
+        self.steps_since_last_recalc = 0
+        self.recalc_interval = 5
 
         if self.dest:
-            print(f"Car {self.unique_id} calculating path to destination at {self.dest.coordinate}")
             self.calcPathAEstrella()
     
-    def heuristica(self,cell1,cell2):
-        x1,y1 = cell1.coordinate
-        x2,y2 = cell2.coordinate
-        return (abs(x2-x1)+abs(y2-y1)) 
+    def heuristica(self, cell1, cell2):
+        """Distancia Manhattan"""
+        x1, y1 = cell1.coordinate
+        x2, y2 = cell2.coordinate
+        return abs(x2 - x1) + abs(y2 - y1)
     
-    def getCost(self,cell):
-        cost = 0
-        for agent in cell.agents: 
-            if isinstance(agent,Car): 
-                cost += self.weightCars
-            if isinstance(agent, Traffic_Light):
-                cost += self.weightLights
-        return cost
+    def isValidTurn(self, current_dir, next_dir):
+        """Verifica que no sea U-turn"""
+        if not current_dir or not next_dir:
+            return True
+        opposites = {"Right": "Left", "Left": "Right", "Up": "Down", "Down": "Up"}
+        return opposites.get(current_dir) != next_dir
     
     def getDirectionBetweenCells(self, from_cell, to_cell):
+        """Calcula dirección entre dos celdas"""
         x1, y1 = from_cell.coordinate
         x2, y2 = to_cell.coordinate
-        if x2 > x1:
-            return "Right"
-        elif x2 < x1:
-            return "Left"
-        elif y2 > y1:
-            return "Up"
-        elif y2 < y1:
-            return "Down"
+        if x2 > x1: return "Right"
+        if x2 < x1: return "Left"
+        if y2 > y1: return "Up"
+        if y2 < y1: return "Down"
         return None
     
-    def isValidTurn(self, current_direction, next_direction):
-        if not current_direction or not next_direction:
-            return True
-        opposites = {
-            "Right": "Left",
-            "Left": "Right",
-            "Up": "Down",
-            "Down": "Up"
-        }
-        
-        if opposites.get(current_direction) == next_direction:
-            return False
-        
-        return True
-    
-    def canEnterCell(self, from_cell, to_cell):
-        move_direction = self.getDirectionBetweenCells(from_cell, to_cell)
-        
-        current_direction = None
-        for agent in from_cell.agents:
-            if isinstance(agent, Road):
-                current_direction = agent.direction
-                break
-        
-        if current_direction and not self.isValidTurn(current_direction, move_direction):
-            return False
-        
-        next_road_direction = None
+    def getCellInfo(self, cell):
+        """
+        UNA SOLA pasada por los agentes de una celda.
+        Retorna: (has_car, has_red_light, has_destination, road_direction, has_traffic_light)
+        """
+        has_car = False
+        has_red_light = False
+        has_destination = False
         has_traffic_light = False
-        
-        for agent in to_cell.agents:
-            if isinstance(agent, Road):
-                next_road_direction = agent.direction
-            if isinstance(agent, Traffic_Light):
-                has_traffic_light = True
-        
-        if has_traffic_light:
-            return True
-        
-        if any(isinstance(agent, Destination) for agent in to_cell.agents):
-            return True
-        
-        if next_road_direction:
-            opposites = {
-                "Right": "Left",
-                "Left": "Right",
-                "Up": "Down",
-                "Down": "Up"
-            }
-            
-            if move_direction == opposites.get(next_road_direction):
-                return False
-        
-        return True
-
-    def getVecinos(self, cell):
-        """Get valid neighboring cells respecting traffic rules"""
-        neighbors = []
-        x, y = cell.coordinate
-        
-        current_direction = None
-        has_traffic_light = False
-        is_destination = False
+        road_direction = None
         
         for agent in cell.agents:
-            if isinstance(agent, Road):
-                current_direction = agent.direction
-            if isinstance(agent, Traffic_Light):
+            if isinstance(agent, Car):
+                has_car = True
+            elif isinstance(agent, Traffic_Light):
                 has_traffic_light = True
-            if isinstance(agent, Destination):
-                is_destination = True
-    
-        direction_offsets = {
-            "Right": (x+1, y),
-            "Left": (x-1, y),
-            "Up": (x, y+1),
-            "Down": (x, y-1)
+                if not agent.state:
+                    has_red_light = True
+            elif isinstance(agent, Destination):
+                has_destination = True
+            elif isinstance(agent, Road):
+                road_direction = agent.direction
+        
+        return has_car, has_red_light, has_destination, road_direction, has_traffic_light
+
+    def getVecinos(self, cell):
+        """Obtiene vecinos válidos según reglas de tráfico"""
+        neighbors = []
+        x, y = cell.coordinate
+        _, _, _, current_direction, _ = self.getCellInfo(cell)
+        
+        offsets = {
+            "Right": (x+1, y), "Left": (x-1, y),
+            "Up": (x, y+1), "Down": (x, y-1)
         }
         
-        for direction_name, nextPos in direction_offsets.items():
+        for direction_name, (nx, ny) in offsets.items():
+            # Bounds check rápido
+            if not (0 <= nx < self.model.width and 0 <= ny < self.model.height):
+                continue
+            
             try:
-                nextCell = self.model.grid[nextPos]
-                has_road = any(isinstance(obj, (Road, Traffic_Light, Destination)) for obj in nextCell.agents)
+                nextCell = self.model.grid[(nx, ny)]
                 
-                if not has_road:
+                # Verificar que haya road/traffic_light/destination
+                _, _, has_dest, next_road_dir, has_tl = self.getCellInfo(nextCell)
+                if not (has_dest or has_tl or next_road_dir):
                     continue
+                
+                # Validar giro desde celda actual
                 if current_direction and not self.isValidTurn(current_direction, direction_name):
                     continue
-                if self.canEnterCell(cell, nextCell):
-                    neighbors.append(nextCell)                
+                
+                # Validar entrada a celda siguiente
+                if has_tl or has_dest:
+                    neighbors.append(nextCell)
+                    continue
+                
+                # Validar que no sea contra sentido
+                if next_road_dir:
+                    opposites = {"Right": "Left", "Left": "Right", "Up": "Down", "Down": "Up"}
+                    if direction_name == opposites.get(next_road_dir):
+                        continue
+                
+                neighbors.append(nextCell)
             except:
                 pass
+        
         return neighbors
 
     def calcPathAEstrella(self):
+        """A* optimizado"""
         if not self.dest:
-            print(f"Car {self.unique_id}: no dest")
             self.path = []
             return
-        dest_cell = self.dest.cell if hasattr(self.dest, 'cell') else self.dest 
         
-        print(f"Car {self.unique_id}: Calculating path from {self.cell.coordinate} to {dest_cell.coordinate}")
+        dest_cell = self.dest.cell if hasattr(self.dest, 'cell') else self.dest
         start = self.cell
-        cont = 0
-        open_set = []
-        heapq.heappush(open_set, (0, cont, start))
-        cont += 1
+        
+        open_set = [(0, 0, start)]
         provenencia = {}
         gScore = {start: 0}
         fScore = {start: self.heuristica(start, dest_cell)}
         openSetHash = {start}
+        cont = 1
         
-        iterations = 0
-        max_iterations = 10000
-
-        while open_set and iterations < max_iterations:
-            iterations += 1
-            actual = heapq.heappop(open_set)[2]
+        for _ in range(10000):  # Max iterations
+            if not open_set:
+                break
+            
+            _, _, actual = heapq.heappop(open_set)
             openSetHash.remove(actual)
+            
             if actual.coordinate == dest_cell.coordinate:
+                # Reconstruir path
                 self.path = []
-                while actual in provenencia: 
+                while actual in provenencia:
                     self.path.append(actual)
                     actual = provenencia[actual]
                 self.path.reverse()
                 self.pathIndex = 0
-                print(f"Car {self.unique_id} found path with {len(self.path)} steps (explored {iterations} nodes)")
+                self.steps_since_last_recalc = 0
                 return
             
-            vecinos = self.getVecinos(actual)
-            """
-            if iterations < 5:
-                print(f"  Iteration {iterations}: at {actual.coordinate}, found {len(vecinos)} neighbors")
-            """
-            for vecino in vecinos:
-                movimientoCosto = self.weightDist + self.getCost(vecino)
-                scoreGTemp = gScore[actual] + movimientoCosto
-                if vecino not in gScore or scoreGTemp < gScore[vecino]:
+            for vecino in self.getVecinos(actual):
+                # Calcular costo
+                cost = self.weightDist
+                has_car, _, _, _, has_tl = self.getCellInfo(vecino)
+                if has_car:
+                    cost += self.weightCars
+                if has_tl:
+                    cost += self.weightLights
+                
+                tentative_g = gScore[actual] + cost
+                
+                if vecino not in gScore or tentative_g < gScore[vecino]:
                     provenencia[vecino] = actual
-                    gScore[vecino] = scoreGTemp
-                    fScore[vecino] = scoreGTemp + self.heuristica(vecino, dest_cell)
+                    gScore[vecino] = tentative_g
+                    fScore[vecino] = tentative_g + self.heuristica(vecino, dest_cell)
+                    
                     if vecino not in openSetHash:
                         heapq.heappush(open_set, (fScore[vecino], cont, vecino))
                         cont += 1
                         openSetHash.add(vecino)
-    
-        print(f"Car {self.unique_id}: NO PATH FOUND after {iterations} iterations")
-        print(f"Car {self.unique_id}: Start={self.cell.coordinate}, Dest={dest_cell.coordinate}")
+        
         self.path = []
+        self.steps_since_last_recalc = 0
 
-    def getValidDirections(self, current_cell):
-        if self.path and self.pathIndex < len(self.path):
-            next_in_path = self.path[self.pathIndex]    
-            has_traffic_light = any(isinstance(agent, Traffic_Light) for agent in current_cell.agents)
-            
-            if has_traffic_light:
-                road_direction = None
-                for agent in current_cell.agents:
-                    if isinstance(agent, Road):
-                        road_direction = agent.direction
-                        break 
-                move_direction = self.getDirectionBetweenCells(current_cell, next_in_path)
-                if self.last_direction:
-                    if not self.isValidTurn(self.last_direction, move_direction):
-                        print(f"Car {self.unique_id} blocked from sideways movement at traffic light")
-                        return []
-                if road_direction and move_direction:
-                    if not self.isValidTurn(road_direction, move_direction):
-                        return []
-            
-            print(f"Car {self.unique_id} following A* path: step {self.pathIndex}/{len(self.path)} to {next_in_path.coordinate}")
-            return [next_in_path]
-        
-        if self.dest and (not self.path or self.pathIndex >= len(self.path)):
-            print(f"Car {self.unique_id} recalculating path...")
+    def shouldRecalculatePath(self):
+        """Determina si recalcular A*"""
+        return (
+            self.steps_since_last_recalc >= self.recalc_interval or
+            self.state in ["WaitingTraffic", "Jammed", "WaitingRedLight"] or
+            not self.path or
+            self.pathIndex >= len(self.path)
+        )
+
+    def getNextCell(self):
+        """
+        Obtiene la siguiente celda válida.
+        Retorna: (nextCell, should_recalc) o (None, False)
+        """
+        # Recalcular si es necesario
+        if self.dest and self.shouldRecalculatePath():
             self.calcPathAEstrella()
-            if self.path and self.pathIndex < len(self.path):
-                next_in_path = self.path[self.pathIndex]
-                has_traffic_light = any(isinstance(agent, Traffic_Light) for agent in current_cell.agents)
-                if has_traffic_light and self.last_direction:
-                    move_direction = self.getDirectionBetweenCells(current_cell, next_in_path)
-                    if not self.isValidTurn(self.last_direction, move_direction):
-                        print(f"Car {self.unique_id} blocked from sideways movement at traffic light (new path)")
-                        return []
+        
+        # Usar path si existe
+        if self.path and self.pathIndex < len(self.path):
+            next_cell = self.path[self.pathIndex]
+            
+            # Validar giros en semáforos
+            _, _, _, _, has_tl = self.getCellInfo(self.cell)
+            if has_tl:
+                move_dir = self.getDirectionBetweenCells(self.cell, next_cell)
+                _, _, _, road_dir, _ = self.getCellInfo(self.cell)
                 
-                return [next_in_path]
+                if self.last_direction and not self.isValidTurn(self.last_direction, move_dir):
+                    return None, False
+                if road_dir and not self.isValidTurn(road_dir, move_dir):
+                    return None, False
+            
+            return next_cell, False
         
-        print(f"Car {self.unique_id} using fallback road following")
-        road = None
-        for agent in current_cell.agents:
-            if isinstance(agent, Road):
-                road = agent
-                self.last_direction = road.direction
-                break
-        if not road and self.last_direction:
-            direction = self.last_direction
-        elif road:
-            direction = road.direction
-        else:
-            return []
+        # Fallback: seguir road direction
+        _, _, _, road_dir, _ = self.getCellInfo(self.cell)
+        if not road_dir:
+            road_dir = self.last_direction
         
-        x, y = current_cell.coordinate
+        if not road_dir:
+            return None, False
         
-        directionMap = {
-            "Right": (1, 0),
-            "Left": (-1, 0),
-            "Up": (0, 1),
-            "Down": (0, -1)
+        direction_map = {
+            "Right": (1, 0), "Left": (-1, 0),
+            "Up": (0, 1), "Down": (0, -1)
         }
         
-        if direction not in directionMap:
-            return []
-        dx, dy = directionMap[direction]
-        nextPos = (x + dx, y + dy)
+        if road_dir not in direction_map:
+            return None, False
+        
+        x, y = self.cell.coordinate
+        dx, dy = direction_map[road_dir]
         try:
-            next = self.model.grid[nextPos]
-            return [next]
+            return self.model.grid[(x + dx, y + dy)], False
         except:
-            return []
+            return None, False
 
-    def checkNextCell(self):
-        valid_cells = self.getValidDirections(self.cell)
-        if not valid_cells:
-            print(f"Car {self.unique_id} at {self.cell.coordinate} has no valid directions")
-            return None, "WaitingTraffic"
-        
-        nextCell = valid_cells[0]
-        has_valid_destination = any(
-            isinstance(obj, (Road, Traffic_Light, Destination)) 
-            for obj in nextCell.agents
-        )
-        
-        if not has_valid_destination:
-            return None, "WaitingTraffic"
-        
-        has_destination = any(isinstance(obj, Destination) for obj in nextCell.agents)
-        if has_destination:
-            return nextCell, "AtDestination"
-        
-        for agent in nextCell.agents:
-            if isinstance(agent, Traffic_Light):
-                if not agent.state:  # Rojo
-                    return None, "WaitingRedLight"
-        
-        for agent in nextCell.agents:
-            if isinstance(agent, Car):
-                if agent.state in ["WaitingRedLight", "WaitingTraffic"]:
-                    return None, "WaitingTraffic"
-        
-        has_car = any(isinstance(obj, Car) for obj in nextCell.agents)
-        if has_car:
-            return None, "WaitingTraffic"
-        
-        return nextCell, "Moving"
-    
-    def transitionState(self, newState):
-        if self.state != newState:
-            print(f"Car {self.unique_id} at {self.cell.coordinate}: {self.state} -> {newState}")
-            
-            if newState in ["WaitingTraffic", "WaitingRedLight"]:
-                self.times_waited_in_traffic += 1
-            
-            self.state = newState
-
-    def update(self):
-        nextCell, newState = self.checkNextCell()
-        
-        if newState == "AtDestination" and nextCell:
-            print(f"Car {self.unique_id} reached destination at {nextCell.coordinate}")
+    def step(self):
+        """
+        FSM completo en un solo método - sin llamadas recursivas.
+        Orden: Check destino → Obtener next → Actualizar estado → Ejecutar acción
+        """
+        # ===== 1. CHECK TERMINAL STATE =====
+        if self.state == "AtDestination":
+            # Cleanup
             old_cell = self.cell
-            
-            self.model.total_cars_arrived += 1
-            self.model.total_steps_to_destination += self.steps_taken
-            self.model.total_traffic_lights_encountered += self.traffic_lights_encountered
-            
-            print(f"Car {self.unique_id} stats: Steps={self.steps_taken}, Traffic Lights={self.traffic_lights_encountered}, Waited={self.times_waited_in_traffic} times")
-            
-            self.cell = nextCell
-            self.transitionState("AtDestination")
+            self.model.totCarsArrived += 1
+            self.model.totStepsTaken += self.steps_taken
+            self.model.totSemaforosFound += self.semaforosFound
+            self.model.embotellamientos += self.embotellamientosEncontrados
             
             if self in old_cell.agents:
                 old_cell.agents.remove(self)
-            if self in nextCell.agents:
-                nextCell.agents.remove(self)
-            
             if self in self.model.agents:
                 self.model.agents.remove(self)
             
-            
             self.cell = None
-            
-            print(f"Car {self.unique_id} removed from simulation")
             return
         
-        if newState == "Moving" and nextCell:
-            old_pos = self.cell.coordinate
-            self.last_direction = self.getDirectionBetweenCells(self.cell, nextCell)
+        # ===== 2. CHECK SI LLEGÓ AL DESTINO =====
+        _, _, at_dest, _, _ = self.getCellInfo(self.cell)
+        if at_dest:
+            self.state = "AtDestination"
+            return  # Se ejecuta cleanup en siguiente step
+        
+        # ===== 3. OBTENER SIGUIENTE CELDA =====
+        nextCell, _ = self.getNextCell()
+        
+        # ===== 4. ACTUALIZAR ESTADO + EJECUTAR ACCIÓN =====
+        if not nextCell:
+            # Sin camino válido → Embotellamiento
+            if self.state not in ["WaitingTraffic", "Jammed"]:
+                self.tiempoEnEmbotellamiento = 0
             
-            has_traffic_light = any(isinstance(agent, Traffic_Light) for agent in nextCell.agents)
-            if has_traffic_light:
-                self.traffic_lights_encountered += 1
+            self.tiempoEnEmbotellamiento += 1
             
-            self.cell = nextCell 
-            self.steps_taken += 1
-            self.pathIndex += 1
-            self.transitionState("Moving")
-            print(f"Car {self.unique_id} moved from {old_pos} to {self.cell.coordinate}")
-        else:
-            self.transitionState(newState)
-
-    def step(self):
-        self.update()
+            if self.tiempoEnEmbotellamiento >= self.paciencia:
+                # ===== ESTADO: JAMMED =====
+                self.state = "Jammed"
+                self.embotellamientosEncontrados += 1
+                
+                # Intentar romper jam
+                if random.random() <= self.probabilidadRomperEmbotellamiento:
+                    available = []
+                    for cell in self.getVecinos(self.cell):
+                        has_car, has_red, _, current_dir, _ = self.getCellInfo(cell)
+                        if has_car or has_red:
+                            continue
+                        
+                        move_dir = self.getDirectionBetweenCells(self.cell, cell)
+                        _, _, _, my_road_dir, _ = self.getCellInfo(self.cell)
+                        if my_road_dir and not self.isValidTurn(my_road_dir, move_dir):
+                            continue
+                        
+                        available.append(cell)
+                    
+                    if available:
+                        random_cell = random.choice(available)
+                        self.last_direction = self.getDirectionBetweenCells(self.cell, random_cell)
+                        self.cell = random_cell
+                        self.steps_taken += 1
+                        self.calcPathAEstrella()
+                        self.tiempoEnEmbotellamiento = 0
+                        return
+                
+                self.steps_since_last_recalc += 1
+            else:
+                # ===== ESTADO: WAITING TRAFFIC =====
+                self.state = "WaitingTraffic"
+                self.embotellamientosEncontrados += 1
+                self.steps_since_last_recalc += 1
+            
+            return
+        
+        # ===== 5. ANALIZAR SIGUIENTE CELDA =====
+        has_car, has_red, has_dest, _, has_tl = self.getCellInfo(nextCell)
+        
+        # Destino
+        if has_dest:
+            self.state = "Moving"
+            self.tiempoEnEmbotellamiento = 0
+            # Intentar moverse
+            if not has_car:
+                self.last_direction = self.getDirectionBetweenCells(self.cell, nextCell)
+                if has_tl:
+                    self.semaforosFound += 1
+                self.cell = nextCell
+                self.steps_taken += 1
+                self.pathIndex += 1
+                self.steps_since_last_recalc += 1
+            return
+        
+        # Semáforo en rojo
+        if has_red:
+            self.state = "WaitingRedLight"
+            self.tiempoEnEmbotellamiento = 0
+            self.steps_since_last_recalc += 1
+            return
+        
+        # Carro bloqueando
+        if has_car:
+            if self.state not in ["WaitingTraffic", "Jammed"]:
+                self.tiempoEnEmbotellamiento = 0
+            
+            self.tiempoEnEmbotellamiento += 1
+            
+            if self.tiempoEnEmbotellamiento >= self.paciencia:
+                # ===== JAMMED con carro =====
+                self.state = "Jammed"
+                self.embotellamientosEncontrados += 1
+                
+                # Intentar romper jam
+                if random.random() <= self.probabilidadRomperEmbotellamiento:
+                    available = []
+                    for cell in self.getVecinos(self.cell):
+                        c_has_car, c_has_red, _, _, _ = self.getCellInfo(cell)
+                        if c_has_car or c_has_red:
+                            continue
+                        
+                        move_dir = self.getDirectionBetweenCells(self.cell, cell)
+                        _, _, _, my_road_dir, _ = self.getCellInfo(self.cell)
+                        if my_road_dir and not self.isValidTurn(my_road_dir, move_dir):
+                            continue
+                        
+                        available.append(cell)
+                    
+                    if available:
+                        random_cell = random.choice(available)
+                        self.last_direction = self.getDirectionBetweenCells(self.cell, random_cell)
+                        self.cell = random_cell
+                        self.steps_taken += 1
+                        self.calcPathAEstrella()
+                        self.tiempoEnEmbotellamiento = 0
+                        return
+                
+                self.steps_since_last_recalc += 1
+            else:
+                # ===== WAITING TRAFFIC =====
+                self.state = "WaitingTraffic"
+                self.embotellamientosEncontrados += 1
+                self.steps_since_last_recalc += 1
+            
+            return
+        
+        # ===== 6. CELDA LIBRE - MOVERSE =====
+        self.state = "Moving"
+        self.tiempoEnEmbotellamiento = 0
+        self.last_direction = self.getDirectionBetweenCells(self.cell, nextCell)
+        
+        if has_tl:
+            self.semaforosFound += 1
+        
+        self.cell = nextCell
+        self.steps_taken += 1
+        self.pathIndex += 1
+        self.steps_since_last_recalc += 1
 
 
 class Traffic_Light(FixedAgent):
-    """
-    Traffic light. Where the traffic lights are in the grid.
-    """
     def __init__(self, model, cell, state = False, timeToChange = 10):
         super().__init__(model)
         self.cell = cell
@@ -386,35 +410,27 @@ class Traffic_Light(FixedAgent):
     def step(self):
         if self.model.steps % self.timeToChange == 0:
             self.state = not self.state
-            print(f"Traffic light at {self.cell.coordinate} changed to {'GREEN' if self.state else 'RED'}")
 
 
 class Destination(FixedAgent):
-    """
-    Destination agent. Where each car should go.
-    """
     def __init__(self, model, cell):
         super().__init__(model)
         self.cell = cell
+    
     def step(self):
         pass
 
 
 class Obstacle(FixedAgent):
-    """
-    Obstacle agent. Just to add obstacles to the grid.
-    """
     def __init__(self, model, cell):
         super().__init__(model)
         self.cell = cell
+    
     def step(self):
         pass
 
 
 class Road(FixedAgent):
-    """
-    Road agent. Determines where the cars can move, and in which direction.
-    """
     def __init__(self, model, cell, direction= "Left"):
         super().__init__(model)
         self.cell = cell

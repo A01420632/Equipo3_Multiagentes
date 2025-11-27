@@ -13,6 +13,7 @@ const agent_server_uri = "http://localhost:8585/";
 
 const agents = [];
 const obstacles = [];
+const trafficLights = [];
 const roads = [];
 const destinations = [];
 
@@ -57,7 +58,6 @@ async function getCars() {
             
             for (let i = agents.length - 1; i >= 0; i--) {
                 if (!serverAgentIds.has(agents[i].id)) {
-                    //console.log(`Car ${agents[i].id} removed (reached destination)`);
                     agents.splice(i, 1);
                 }
             }
@@ -67,16 +67,33 @@ async function getCars() {
 
                 if(current_agent != undefined){
                     current_agent.oldPosArray = [...current_agent.posArray];
-                    current_agent.oldDir = current_agent.dirActual;
+                    
+                    if (current_agent.rotation) {
+                        current_agent.oldRotation = { ...current_agent.rotation };
+                    }
+                    
                     current_agent.dirActual = agent.dirActual;
+                    
+                    current_agent.rotation = { 
+                        x: 0, 
+                        y: directionToAngle(agent.dirActual || "Right"), 
+                        z: 0 
+                    };
+                    
                     current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
                 } else {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
                     newCar.oldPosArray = [...newCar.posArray];
                     newCar.dirActual = agent.dirActual;
-                    newCar.oldDir = newCar.dirActual;
+                    
+                    newCar.rotation = { 
+                        x: 0, 
+                        y: directionToAngle(agent.dirActual || "Right"), 
+                        z: 0 
+                    };
+                    newCar.oldRotation = { ...newCar.rotation };
+                    
                     agents.push(newCar);
-                    //console.log(`New car added: ID ${agent.id} at (${agent.x}, ${agent.y}, ${agent.z})`);
                 }
             }
         }
@@ -84,6 +101,16 @@ async function getCars() {
     } catch (error) {
         console.log(error);
     }
+}
+
+function directionToAngle(direction) {
+    const angles = {
+        "Right": 0,
+        "Up": Math.PI / 2,
+        "Left": Math.PI,
+        "Down": -Math.PI / 2
+    };
+    return angles[direction] || 0;
 }
 
 /*
@@ -99,7 +126,7 @@ async function getLights() {
             if (obstacles.length == 0) {
                 for (const light of result.positions) {
                     const newLight = new Object3D(light.id, [light.x, light.y, light.z]);
-                    obstacles.push(newLight);
+                    trafficLights.push(newLight);
                 }
             }
         }
@@ -187,4 +214,4 @@ async function update() {
     }
 }
 
-export { agents, obstacles, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };
+export { agents, obstacles, trafficLights, roads, destinations, initAgentsModel, update, getCars, getLights, getDestination, getObstacles, getRoads };

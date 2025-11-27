@@ -8,65 +8,13 @@
 
 'use strict';
 
-// Global variable for all materials loaded
-// NOTE: This is a bad idea. When materials have the same names,
-// it could cause confusion in the scene.
-let materials = {};
-let materialInUse = undefined;
-
-/*
- * Extract the elements in a face as encoded in an OBJ file
- * As faces are read, pass the information into the array that will be used
- * to draw the object in WebGL
- */
-function parseFace(parts, objData, arrays) {
-    // This will produce an array of arrays
-    // Each arrays corresponds has the vertices
-    // Each vertex is an array with its vertex, texture and normal indices
-    let faceVerts = parts.slice(1).map(face => face.split('/'));
-    faceVerts.forEach(vert => {
-        const vertex = vert != '' ? Number(vert) : undefined
-        if (vertex != undefined) {
-            // console.log(objData.vertices[vert[0]])
-
-            // First element is the vertex index
-            arrays.a_position.data.push(...objData.vertices[vert[0]]);
-            // Second element is the texture index
-            if (vert.length > 1 && vert[1] != "") {
-                arrays.a_texCoord.data.push(...objData.textures[vert[1]]);
-            }
-            // Third element is the normal index
-            if (vert.length > 2 && vert[2] != "") {
-                arrays.a_normal.data.push(...objData.normals[vert[2]]);
-            }
-
-            if (materialInUse) {
-                arrays.a_color.data.push(...materialInUse['Kd'], 1);
-            } else {
-                // Force a color for each vertex
-                arrays.a_color.data.push(0.4, 0.4, 0.4, 1);
-            }
-            // This is not really necessary, but just in case
-            objData.faces.push({v: vert[0], t: vert[1], n: vert[2]});
-        }
-    });
-}
-
 /*
  * Read the contents of an OBJ file received as a string
  * Return an object called arrays, with the arrays necessary to build a
  * Vertex Array Object (VAO) for WebGL.
+ * @param {boolean} invertFaces - Si es true, invierte el orden de los vértices de las caras
  */
-function loadObj(objString) {
-
-    // Initialize a dummy item in the lists as index 0
-    // This will make it easier to handle indices starting at 1 as used by OBJ
-    let objData = {
-        vertices: [ [0, 0, 0] ],
-        normals: [ [0, 0, 0] ],
-        textures: [ [0, 0, 0] ],
-        faces: [ ],
-    };
+function loadObj(objString, materials = null, invertFaces = false) {
 
     // The array with the attributes that will be passed to WebGL
     let arrays = {
@@ -88,41 +36,134 @@ function loadObj(objString) {
         }
     };
 
-    let partInfo;
-    let lines = objString.split('\n');
-    lines.forEach(line => {
-        let parts = line.split(/\s+/);
-        switch (parts[0]) {
-            case 'v':
-                // Ignore the first part (the keyword),
-                // remove any empty elements and convert them into a number
-                partInfo = parts.slice(1).filter(v => v != '').map(Number);
-                objData.vertices.push(partInfo);
-                break;
-            case 'vn':
-                partInfo = parts.slice(1).filter(vn => vn != '').map(Number);
-                objData.normals.push(partInfo);
-                break;
-            case 'vt':
-                partInfo = parts.slice(1).filter(f => f != '').map(Number);
-                objData.textures.push(partInfo);
-                break;
-            case 'f':
-                parseFace(parts, objData, arrays);
-                break;
-            case 'usemtl':
-                if (materials.hasOwnProperty(parts[1])) {
-                    materialInUse = materials[parts[1]];
-                }
-                break;
+    // Arrays temporales para almacenar los datos del OBJ
+    const vertices = [];      // Almacena todos los vértices (v)
+    const normals = [];       // Almacena todas las normales (vn)
+    const texCoords = [];     // Almacena todas las coordenadas de textura (vt)
+    
+    // Track current material being used
+    let currentMaterial = null;
+    let currentMaterialColor = [1, 1, 1, 1]; // Default white
+    
+    // Dividir el string en líneas
+    const lines = objString.split('\n');
+    
+    // Primera pasada: leer todos los vértices, normales y coordenadas de textura
+    for (let line of lines) {
+        line = line.trim();
+        
+        // Ignorar comentarios y líneas vacías
+        if (line.startsWith('#') || line.length === 0) {
+            continue;
         }
-    });
+        
+        const parts = line.split(/\s+/);
+        const type = parts[0];
+        
+        // Leer vértices (v x y z)
+        if (type === 'v') {
+            vertices.push([
+                parseFloat(parts[1]),
+                parseFloat(parts[2]),
+                parseFloat(parts[3])
+            ]);
+        }
+        // Leer normales (vn x y z)
+        else if (type === 'vn') {
+            normals.push([
+                parseFloat(parts[1]),
+                parseFloat(parts[2]),
+                parseFloat(parts[3])
+            ]);
+        }
+        // Leer coordenadas de textura (vt u v)
+        else if (type === 'vt') {
+            texCoords.push([
+                parseFloat(parts[1]),
+                parseFloat(parts[2])
+            ]);
+        }
+    }
+    
+    // Segunda pasada: procesar las caras (f) y materiales (usemtl)
+    for (let line of lines) {
+        line = line.trim();
+        
+        // Check for material usage
+        if (line.startsWith('usemtl ')) {
+            const materialName = line.substring(7).trim();
+            if (materials && materials[materialName]) {
+                currentMaterial = materials[materialName];
+                if (currentMaterial.Kd) {
+                    currentMaterialColor = [...currentMaterial.Kd, 1.0];
+                }
+            }
+            continue;
+        }
+        
+        if (!line.startsWith('f ')) {
+            continue;
+        }
+        
+        const parts = line.split(/\s+/);
+        const faceVertices = [];
+        
+        // Procesar cada vértice de la cara (puede ser f v, f v/vt, f v/vt/vn, o f v//vn)
+        for (let i = 1; i < parts.length; i++) {
+            const vertexData = parts[i].split('/');
+            const vertexIndex = parseInt(vertexData[0]) - 1;  // OBJ usa índices base-1
+            const texCoordIndex = vertexData[1] ? parseInt(vertexData[1]) - 1 : -1;
+            const normalIndex = vertexData[2] ? parseInt(vertexData[2]) - 1 : -1;
+            
+            faceVertices.push({
+                v: vertexIndex,
+                vt: texCoordIndex,
+                vn: normalIndex
+            });
+        }
+        
+        // Triangular la cara (convertir polígonos en triángulos)
+        // Si la cara tiene más de 3 vértices, crear múltiples triángulos
+        for (let i = 1; i < faceVertices.length - 1; i++) {
+            // Invertir el orden si invertFaces es true
+            const triangleIndices = invertFaces ? [0, i, i+1] : [0, i+1, i];
+            
+            for (let idx of triangleIndices) {
+                const faceVertex = faceVertices[idx];
+                
+                // Agregar posición
+                if (faceVertex.v >= 0 && faceVertex.v < vertices.length) {
+                    arrays.a_position.data.push(...vertices[faceVertex.v]);
+                }
+                
+                // Agregar normal
+                if (faceVertex.vn >= 0 && faceVertex.vn < normals.length) {
+                    arrays.a_normal.data.push(...normals[faceVertex.vn]);
+                } else {
+                    // Si no hay normal, usar un valor por defecto
+                    arrays.a_normal.data.push(0, 1, 0);
+                }
+                
+                // Agregar coordenada de textura
+                if (faceVertex.vt >= 0 && faceVertex.vt < texCoords.length) {
+                    arrays.a_texCoord.data.push(...texCoords[faceVertex.vt]);
+                } else {
+                    // Si no hay coordenada de textura, usar valor por defecto
+                    arrays.a_texCoord.data.push(0, 0);
+                }
+                
+                // Agregar color del material actual
+                arrays.a_color.data.push(...currentMaterialColor);
+            }
+        }
+    }
 
     //console.log("ATTRIBUTES:")
     //console.log(arrays);
 
     //console.log("OBJ DATA:")
-    //console.log(objData);
+    //console.log(`Vertices: ${vertices.length}, Normals: ${normals.length}, TexCoords: ${texCoords.length}`);
+    //console.log(`Triangles: ${arrays.a_position.data.length / 9}`);
 
     return arrays;
 }
@@ -132,14 +173,24 @@ function loadObj(objString) {
  * Return an object containing all the materials described inside,
  * with their illumination attributes.
  */
-function loadMtl(mtlString) {
+let materials = {};
+let materialInUse = undefined;
 
+function loadMtl(mtlString) {
+    const materials= {};
     let currentMtl = {};
 
     let partInfo;
     let lines = mtlString.split('\n');
     lines.forEach(line => {
+        line= line.trim();
+
+        if (line.startsWith('#') || line.length === 0) {
+            return;
+        }
+        
         let parts = line.split(/\s+/);
+
         switch (parts[0]) {
             case 'newmtl':
                 // Add a new entry into the object
@@ -152,6 +203,26 @@ function loadMtl(mtlString) {
             case 'Kd':  // The specular color
                 partInfo = parts.slice(1).filter(v => v != '').map(Number);
                 currentMtl['Kd'] = partInfo;
+                break;
+            case 'Ks':  // Specular color
+                partInfo = parts.slice(1).filter(v => v != '').map(Number);
+                currentMtl['Ks'] = partInfo;
+                break;
+            case 'Ke':  // Emissive color
+                partInfo = parts.slice(1).filter(v => v != '').map(Number);
+                currentMtl['Ke'] = partInfo;
+                break;
+            case 'd':   // Transparency (dissolve)
+                currentMtl['d'] = Number(parts[1]);
+                break;
+            case 'Tr':  // Transparency (alternative)
+                currentMtl['Tr'] = Number(parts[1]);
+                break;
+            case 'illum': // Illumination model
+                currentMtl['illum'] = Number(parts[1]);
+                break;
+            case 'map_Kd': // Diffuse texture map
+                currentMtl['map_Kd'] = parts[1];
                 break;
         }
     });

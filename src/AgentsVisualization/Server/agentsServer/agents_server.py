@@ -70,7 +70,8 @@ def getCars():
                     "x": coordinate[0], 
                     "y": 1, 
                     "z": coordinate[1],
-                    "dirActual": a.dirActual or "Right"
+                    "dirActual": a.dirActual or "Right",
+                    "nextDir": a.nextDir or a.dirActual or "Right"
                 }
                 for (coordinate, a) in agents
             ]
@@ -86,14 +87,10 @@ def getLights():
     global cityModel
 
     if request.method == 'GET':
-        # Get the positions of the agents and return them to WebGL in JSON.json.t.
-        # Note that the positions are sent as a list of dictionaries, where each dictionary has the id and position of an agent.
-        # The y coordinate is set to 1, since the agents are in a 3D world. The z coordinate corresponds to the row (y coordinate) of the grid in mesa.
         try:
             agentCells = cityModel.grid.all_cells.select(
                 lambda cell: any(isinstance(obj, Traffic_Light) for obj in cell.agents)
             ).cells
-            # print(f"CELLS: {agentCells}")
 
             agents = [
                 (cell.coordinate, agent)
@@ -101,13 +98,17 @@ def getLights():
                 for agent in cell.agents
                 if isinstance(agent, Traffic_Light)
             ]
-            # print(f"AGENTS: {agents}")
 
             agentPositions = [
-                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
+                {
+                    "id": str(a.unique_id), 
+                    "x": coordinate[0], 
+                    "y": 1, 
+                    "z": coordinate[1],
+                    "state": a.state
+                }
                 for (coordinate, a) in agents
             ]
-            # print(f"AGENT POSITIONS: {agentPositions}")
 
             return jsonify({'positions': agentPositions})
         except Exception as e:

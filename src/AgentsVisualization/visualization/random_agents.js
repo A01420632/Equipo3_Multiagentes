@@ -15,6 +15,7 @@ import GUI from 'lil-gui';
 import { M4 } from '../libs/3d-lib';
 import { Scene3D } from '../libs/scene3d';
 import { Object3D } from '../libs/object3d';
+import { Light3D } from '../libs/light3d';
 import { Camera3D } from '../libs/camera3d';
 import { loadMtl } from '../libs/obj_loader';
 
@@ -24,20 +25,18 @@ import {
   update, getCars, getLights, getDestination, getRoads, getObstacles
 } from '../libs/api_connection.js';
 
-// Define the shader code, using GLSL 3.00
-import vsGLSL from '../assets/shaders/vs_color.glsl?raw';
-import fsGLSL from '../assets/shaders/fs_color.glsl?raw';
+import vsGLSL from '../assets/shaders/vs_phong_301.glsl?raw';
+import fsGLSL from '../assets/shaders/fs_phong_301.glsl?raw';
 
 const scene = new Scene3D();
 
 // Global variables
-let colorProgramInfo = undefined;
+let phongProgramInfo = undefined;
 let gl = undefined;
 const duration = 1000; // ms
 let elapsed = 0;
 let then = 0;
 
-// ===== NUEVO: Variables para control de actualización =====
 let isUpdating = false;
 let pendingUpdate = false;
 
@@ -52,6 +51,14 @@ let carMaterials = null;
 let buildingMaterials = null;
 let trafficLightMaterials = null;
 let roadMaterials = null;
+
+let angulobase = -Math.PI / 2;
+const DIRECTION_ANGLES = {
+  "Right": -Math.PI / 2 + angulobase, // -90° (apunta hacia +X)
+  "Left": Math.PI / 2 + angulobase, // 90° (apunta hacia -X)
+  "Up": Math.PI + angulobase, // 180° (apunta hacia +Z) 
+  "Down": 0 + angulobase // 0° (apunta hacia -Z)
+};
 
 // Function to load OBJ files with optional MTL
 async function loadObjFile(url) {
@@ -89,8 +96,7 @@ async function main() {
   twgl.resizeCanvasToDisplaySize(gl.canvas);
   gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
-  // Prepare the program with the shaders
-  colorProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+  phongProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
 
   // Load OBJ models from assets folder
   console.log('Loading OBJ models...');
@@ -111,9 +117,6 @@ async function main() {
   roadMaterials = roadData ? roadData.materials : null;
   
   console.log('OBJ models and materials loaded');
-  if (carMaterials) console.log('Car materials:', carMaterials);
-  if (buildingMaterials) console.log('Building materials:', buildingMaterials);
-  if (trafficLightMaterials) console.log('Traffic light materials:', trafficLightMaterials);
 
   // Initialize the agents model
   await initAgentsModel();
@@ -130,7 +133,7 @@ async function main() {
   setupScene();
 
   // Position the objects in the scene
-  setupObjects(scene, gl, colorProgramInfo);
+  setupObjects(scene, gl, phongProgramInfo);
 
   // Prepare the user interface
   setupUI();
@@ -153,36 +156,50 @@ function setupScene() {
   camera.panOffset = [0, 8, 0];
   scene.setCamera(camera);
   scene.camera.setupControls();
+
+  let light = new Light3D(0, 
+    [3, 3, 5], // Position
+    [0.3, 0.3, 0.3, 1.0],// Ambient
+    [1.0, 1.0, 1.0, 1.0],  // Diffuse
+    [1.0, 1.0, 1.0, 1.0]); // Specular
+  scene.addLight(light);
 }
 
-// Agregar función helper para convertir dirección a ángulo
 function directionToAngle(direction) {
-    const angles = {
-        "Right": 0,
-        "Up": Math.PI / 2,
-        "Left": Math.PI,
-        "Down": -Math.PI / 2
-    };
-    return angles[direction] || 0;
+  return DIRECTION_ANGLES[direction] || 0;
 }
 
-// Función para interpolar ángulos (shortest path)
-function processAngle(from, to, t) {
-    const normalizeAngle = (angle) => {
-        while (angle > Math.PI) angle -= 2 * Math.PI;
-        while (angle < -Math.PI) angle += 2 * Math.PI;
-        return angle;
-    };
-    
-    from = normalizeAngle(from);
-    to = normalizeAngle(to);
-    
-    // Calcular diferencia más corta
-    let diff = to - from;
-    if (diff > Math.PI) diff -= 2 * Math.PI;
-    if (diff < -Math.PI) diff += 2 * Math.PI;
-    
-    return from + diff * t;
+function angleDifference(from, to) {
+  const normalizeAngle = (angle) => {
+    while (angle > Math.PI) angle -= 2 * Math.PI;
+    while (angle < -Math.PI) angle += 2 * Math.PI;
+    return angle;
+  };
+  
+  from = normalizeAngle(from);
+  to = normalizeAngle(to);
+  
+  let diff = to - from;
+  if (diff > Math.PI) diff -= 2 * Math.PI;
+  if (diff < -Math.PI) diff += 2 * Math.PI;
+  
+  return diff;
+}
+
+function getRandomCarColor() {
+  const colors = [
+    [1.0, 0.0, 0.0, 1.0],  // Rojo
+    [0.0, 0.0, 1.0, 1.0],  // Azul
+    [1.0, 1.0, 0.0, 1.0],  // Amarillo
+    [0.0, 1.0, 0.0, 1.0],  // Verde
+    [1.0, 0.5, 0.0, 1.0],  // Naranja
+    [0.5, 0.0, 0.5, 1.0],  // Púrpura
+    [0.0, 1.0, 1.0, 1.0],  // Cian
+    [1.0, 1.0, 1.0, 1.0],  // Blanco
+    [0.2, 0.2, 0.2, 1.0],  // Negro
+    [0.7, 0.7, 0.7, 1.0],  // Gris
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
 }
 
 function setupObjects(scene, gl, programInfo) {
@@ -196,7 +213,7 @@ function setupObjects(scene, gl, programInfo) {
     baseCar.prepareVAO(gl, programInfo, carObjData, carMaterials);
     console.log('Car model loaded successfully');
   } else {
-    baseCar.prepareVAO(gl, programInfo); // Fallback to cube
+    baseCar.prepareVAO(gl, programInfo);
     console.log('Using default cube for cars');
   }
 
@@ -206,7 +223,7 @@ function setupObjects(scene, gl, programInfo) {
     baseBuilding.prepareVAO(gl, programInfo, buildingObjData, buildingMaterials);
     console.log('Building model loaded successfully');
   } else {
-    baseBuilding.prepareVAO(gl, programInfo); // Fallback to cube
+    baseBuilding.prepareVAO(gl, programInfo);
     console.log('Using default cube for buildings');
   }
 
@@ -216,7 +233,7 @@ function setupObjects(scene, gl, programInfo) {
     baseTrafficLight.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterials);
     console.log('Traffic light model loaded successfully');
   } else {
-    baseTrafficLight.prepareVAO(gl, programInfo); // Fallback to cube
+    baseTrafficLight.prepareVAO(gl, programInfo);
     console.log('Using default cube for traffic lights');
   }
 
@@ -226,7 +243,7 @@ function setupObjects(scene, gl, programInfo) {
     baseRoad.prepareVAO(gl, programInfo, roadObjData, roadMaterials);
     console.log('Road model loaded successfully');
   } else {
-    baseRoad.prepareVAO(gl, programInfo); // Fallback to cube
+    baseRoad.prepareVAO(gl, programInfo);
     console.log('Using default cube for roads');
   }
 
@@ -244,20 +261,14 @@ function setupObjects(scene, gl, programInfo) {
     agent.vao = baseCar.vao;
     agent.scale = { x: 0.2, y: 0.2, z: 0.2 };
     
-    if (carMaterials && Object.keys(carMaterials).length > 0) {
-      const firstMaterial = Object.values(carMaterials)[0];
-      if (firstMaterial && firstMaterial.Kd) {
-        agent.color = [...firstMaterial.Kd, 1.0];
-      } else {
-        agent.color = [1.0, 0.0, 0.0, 1.0];
-      }
-    } else {
-      agent.color = [1.0, 0.0, 0.0, 1.0];
-    }
+    agent.color = getRandomCarColor();
     
-    // ===== USAR dirActual en vez de direction =====
-    agent.rotation = { x: 0, y: directionToAngle(agent.dirActual || "Right"), z: 0 };
-    agent.oldRotation = { ...agent.rotation };
+    const initialDirection = agent.dirActual || "Down";
+    agent.currentDirection = initialDirection;
+    const initialAngle = directionToAngle(initialDirection);
+    
+    agent.oldRotY = initialAngle;
+    agent.rotY = initialAngle;
     agent.oldPosArray = [...agent.posArray];
     
     scene.addObject(agent);
@@ -273,24 +284,14 @@ function setupObjects(scene, gl, programInfo) {
     scene.addObject(agent);
   }
 
-  // Setup traffic lights with traffic light model
   for (const light of trafficLights) {
     light.arrays = baseTrafficLight.arrays;
     light.bufferInfo = baseTrafficLight.bufferInfo;
     light.vao = baseTrafficLight.vao;
     light.scale = { x: 0.01, y: 0.01, z: 0.01 };
     
-    // Apply color from MTL if available
-    if (trafficLightMaterials && Object.keys(trafficLightMaterials).length > 0) {
-      const firstMaterial = Object.values(trafficLightMaterials)[0];
-      if (firstMaterial && firstMaterial.Kd) {
-        light.color = [...firstMaterial.Kd, 1.0];
-      } else {
-        light.color = [0.0, 1.0, 0.0, 1.0]; // Verde fallback
-      }
-    } else {
-      light.color = [0.0, 1.0, 0.0, 1.0]; // Verde fallback
-    }
+    const isGreen = light.state === true || light.state === "True" || light.state === "true";
+    light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
     
     scene.addObject(light);
   }
@@ -318,7 +319,28 @@ function setupObjects(scene, gl, programInfo) {
   }
 }
 
-// Optimized function to update scene objects after fetching new positions
+async function updateTrafficLights() {
+  try {
+    let response = await fetch("http://localhost:8585/getLights");
+    
+    if (response.ok) {
+      let result = await response.json();
+      
+      for (const lightData of result.positions) {
+        const lightObj = scene.objects.find(obj => obj.id == lightData.id);
+        
+        if (lightObj) {
+          const isGreen = lightData.state === true || lightData.state === "true" || lightData.state === 1;
+          lightObj.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
+          lightObj.state = isGreen;
+        }
+      }
+    }
+  } catch (error) {
+    console.error("Error updating traffic lights:", error);
+  }
+}
+
 function updateSceneObjects() {
   const currentAgentIds = new Set(agents.map(agent => agent.id));
   const obstacleIds = new Set(obstacles.map(obs => obs.id));
@@ -333,7 +355,6 @@ function updateSceneObjects() {
     return currentAgentIds.has(obj.id);
   });
   
-  // Solo actualizar carros (agents), no los objetos estáticos
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
@@ -341,12 +362,15 @@ function updateSceneObjects() {
       existingObj.oldPosArray = [...existingObj.posArray];
       existingObj.position = agent.position;
       
-      existingObj.oldRotation = { ...existingObj.rotation };
-      existingObj.rotation = { 
-        x: 0, 
-        y: directionToAngle(agent.dirActual || "Right"),
-        z: 0 
-      };
+      const nextDirection = agent.nextDir || agent.dirActual || "Down";
+      
+      if (existingObj.currentDirection !== nextDirection) {
+        const newAngle = directionToAngle(nextDirection);
+        
+        existingObj.oldRotY = existingObj.rotY;
+        existingObj.rotY = newAngle;
+        existingObj.currentDirection = nextDirection;
+      }
       
     } else {
       agent.arrays = scene.baseCar.arrays;
@@ -354,44 +378,42 @@ function updateSceneObjects() {
       agent.vao = scene.baseCar.vao;
       agent.scale = { x: 0.2, y: 0.2, z: 0.2 };
       
-      if (carMaterials && Object.keys(carMaterials).length > 0) {
-        const firstMaterial = Object.values(carMaterials)[0];
-        if (firstMaterial && firstMaterial.Kd) {
-          agent.color = [...firstMaterial.Kd, 1.0];
-        } else {
-          agent.color = [1.0, 0.0, 0.0, 1.0];
-        }
-      } else {
-        agent.color = [1.0, 0.0, 0.0, 1.0];
-      }
+      agent.color = getRandomCarColor();
       
+      const initialDirection = agent.nextDir || agent.dirActual || "Down";
+      agent.currentDirection = initialDirection;
+      const initialAngle = directionToAngle(initialDirection);
+      
+      agent.oldRotY = initialAngle;
+      agent.rotY = initialAngle;
       agent.oldPosArray = [...agent.posArray];
-      agent.rotation = { x: 0, y: directionToAngle(agent.dirActual || "Right"), z: 0 };
-      agent.oldRotation = { ...agent.rotation };
       
       scene.addObject(agent);
     }
   }
 }
 
-// Draw an object with its corresponding transformations
 function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
   let v3_tra = object.posArray;
   
   if (object.oldPosArray && fract < 1.0) {
+    const smoothFract = fract * fract * (3 - 2 * fract); // smoothstep
     v3_tra = [
-      object.oldPosArray[0] + (object.posArray[0] - object.oldPosArray[0]) * fract,
-      object.oldPosArray[1] + (object.posArray[1] - object.oldPosArray[1]) * fract,
-      object.oldPosArray[2] + (object.posArray[2] - object.oldPosArray[2]) * fract
+      object.oldPosArray[0] + (object.posArray[0] - object.oldPosArray[0]) * smoothFract,
+      object.oldPosArray[1] + (object.posArray[1] - object.oldPosArray[1]) * smoothFract,
+      object.oldPosArray[2] + (object.posArray[2] - object.oldPosArray[2]) * smoothFract
     ];
   }
   
   let rotY = object.rotRad.y;
   
-  if (object.oldRotation && object.rotation && fract < 1.0) {
-    rotY = processAngle(object.oldRotation.y, object.rotation.y, fract);
-  } else if (object.rotation) {
-    rotY = object.rotation.y;
+  if (object.oldRotY !== undefined && object.rotY !== undefined && fract < 1.0) {
+    const smoothFract = fract * fract * (3 - 2 * fract); // smoothstep
+    // Calcular diferencia usando camino más corto
+    const diff = angleDifference(object.oldRotY, object.rotY);
+    rotY = object.oldRotY + diff * smoothFract;
+  } else if (object.rotY !== undefined) {
+    rotY = object.rotY;
   }
   
   let v3_sca = object.scaArray;
@@ -415,10 +437,17 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
   // World-View-Projection
   const wvpMat = M4.multiply(viewProjectionMatrix, transforms);
 
-  // Model uniforms
+  const normalMat = M4.transpose(M4.inverse(object.matrix));
+
   let objectUniforms = {
-    u_transforms: wvpMat,
-    u_color: object.color || [1.0, 1.0, 1.0, 1.0]
+    u_world: transforms,
+    u_worldInverseTransform: normalMat,
+    u_worldViewProjection: wvpMat,
+
+    u_ambientColor: object.color,
+    u_diffuseColor: object.color,
+    u_specularColor: object.color,
+    u_shininess: object.shininess || 200.0,
   }
   twgl.setUniforms(programInfo, objectUniforms);
   
@@ -431,7 +460,7 @@ async function drawScene() {
   let now = Date.now();
   let deltaTime = now - then;
   elapsed += deltaTime;
-  let fract = Math.min(1.0, elapsed / duration);
+  const fract = Math.min(1.0, elapsed / duration);
   then = now;
 
   // Clear the canvas
@@ -445,13 +474,23 @@ async function drawScene() {
   scene.camera.checkKeys();
   const viewProjectionMatrix = setupViewProjection(gl);
 
+  gl.useProgram(phongProgramInfo.program);
+
+  let globalUniforms = {
+    u_viewWorldPosition: scene.camera.posArray,
+    u_lightWorldPosition: scene.lights[0].posArray,
+    u_ambientLight: scene.lights[0].ambient,
+    u_diffuseLight: scene.lights[0].diffuse,
+    u_specularLight: scene.lights[0].specular,
+  }
+  twgl.setUniforms(phongProgramInfo, globalUniforms);
+
   // Draw the objects
-  gl.useProgram(colorProgramInfo.program);
   for (let object of scene.objects) {
-    drawObject(gl, colorProgramInfo, object, viewProjectionMatrix, fract);
+    drawObject(gl, phongProgramInfo, object, viewProjectionMatrix, fract);
   }
 
-  // Double buffer: actualizar en background a mitad del ciclo
+  // ESTO ES PARA EL DOUBLE BUFFER
   if (elapsed >= duration * 0.5 && !isUpdating && !pendingUpdate) {
     pendingUpdate = true;
     updateInBackground();
@@ -470,7 +509,8 @@ async function updateInBackground() {
   
   isUpdating = true;
   try {
-    await update();  // ← getCars() dentro de update() ya guarda oldPosArray y oldRotation
+    await update();
+    await updateTrafficLights();
     updateSceneObjects();
     
     pendingUpdate = false;

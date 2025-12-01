@@ -73,6 +73,7 @@ async function getCars() {
                     }
                     
                     current_agent.dirActual = agent.dirActual;
+                    current_agent.nextDir = agent.nextDir;
                     
                     current_agent.rotation = { 
                         x: 0, 
@@ -85,6 +86,7 @@ async function getCars() {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
                     newCar.oldPosArray = [...newCar.posArray];
                     newCar.dirActual = agent.dirActual;
+                    newCar.nextDir = agent.nextDir;
                     
                     newCar.rotation = { 
                         x: 0, 

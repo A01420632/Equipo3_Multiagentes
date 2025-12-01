@@ -43,6 +43,12 @@ yarn-error.log*
 package-lock.json
 yarn.lock
 
+# Vite
+.vite/
+**/node_modules/.vite/
+dist/
+*.local
+
 # IDE
 .vscode/
 .idea/

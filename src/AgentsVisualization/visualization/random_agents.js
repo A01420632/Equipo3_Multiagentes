@@ -25,13 +25,27 @@ import {
   update, getCars, getLights, getDestination, getRoads, getObstacles
 } from '../libs/api_connection.js';
 
+// Importar shaders de Phong
 import vsGLSL from '../assets/shaders/vs_phong_301.glsl?raw';
 import fsGLSL from '../assets/shaders/fs_phong_301.glsl?raw';
+
+// Importar shaders de color (renombrados)
+import vsColorGLSL from '../assets/shaders/vs_color.glsl?raw';
+import fsColorGLSL from '../assets/shaders/fs_color.glsl?raw';
+
+// Importar shaders de skybox
+import vsSkyboxGLSL from '../assets/shaders/vs_skybox.glsl?raw';
+import fsSkyboxGLSL from '../assets/shaders/fs_skybox.glsl?raw';
 
 const scene = new Scene3D();
 
 // Global variables
 let phongProgramInfo = undefined;
+let colorProgramInfo = undefined;
+let skyboxProgramInfo = undefined;
+let skyboxBufferInfo = undefined;
+let skyboxVAO = undefined;
+let skyboxTexture = undefined;
 let gl = undefined;
 const duration = 1000; // ms
 let elapsed = 0;
@@ -50,6 +64,7 @@ let roadObjData = null;
 let carMaterials = null;
 let buildingMaterials = null;
 let trafficLightMaterials = null;
+let trafficLightMaterialsG = null;
 let roadMaterials = null;
 
 let angulobase = -Math.PI / 2;
@@ -97,23 +112,32 @@ async function main() {
   gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
   phongProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
+  // Prepare the program with the shaders
+  colorProgramInfo = twgl.createProgramInfo(gl, [vsColorGLSL, fsColorGLSL]);
+  skyboxProgramInfo = twgl.createProgramInfo(gl, [vsSkyboxGLSL, fsSkyboxGLSL]);
+
+  // Setup skybox
+  setupSkybox();
 
   // Load OBJ models from assets folder
   console.log('Loading OBJ models...');
   const carData = await loadObjFile('../assets/models/car2.obj');
-  const buildingData = await loadObjFile('../assets/models/EdificioSimple.obj');
+  const buildingData = await loadObjFile('../assets/models/House.obj');
   const trafficLightData = await loadObjFile('../../assets/models/Semaforo.obj');
+  const trafficLightDataGreen = await loadObjFile('../../assets/models/SemaforoVerde.obj');
   const roadData = await loadObjFile('../assets/models/Road.obj');
   
   // Extract OBJ data and materials
   carObjData = carData ? carData.objData : null;
   buildingObjData = buildingData ? buildingData.objData : null;
   trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
+  //trafficLightObjDataG = trafficLightDataG ? trafficLightDataG.objData : null;
   roadObjData = roadData ? roadData.objData : null;
   
   carMaterials = carData ? carData.materials : null;
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
+  trafficLightMaterialsG = trafficLightDataGreen ? trafficLightDataGreen.materials : null;
   roadMaterials = roadData ? roadData.materials : null;
   
   console.log('OBJ models and materials loaded');
@@ -217,8 +241,8 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for cars');
   }
 
-  // Create building model from OBJ
-  const baseBuilding = new Object3D(-3, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  // Create building model from OBJ (invertir solo la tapa superior)
+  const baseBuilding = new Object3D(-3, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false, [[0, 1, 0]]);
   if (buildingObjData) {
     baseBuilding.prepareVAO(gl, programInfo, buildingObjData, buildingMaterials);
     console.log('Building model loaded successfully');
@@ -227,14 +251,24 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for buildings');
   }
 
-  // Create traffic light model from OBJ
+  // Create traffic light model from OBJ (rojo)
   const baseTrafficLight = new Object3D(-4);
   if (trafficLightObjData) {
     baseTrafficLight.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterials);
-    console.log('Traffic light model loaded successfully');
+    console.log('Traffic light (red) model loaded successfully');
   } else {
     baseTrafficLight.prepareVAO(gl, programInfo);
     console.log('Using default cube for traffic lights');
+  }
+
+  // Create traffic light model (verde)
+  const baseTrafficLightGreen = new Object3D(-6);
+  if (trafficLightObjData) {
+    baseTrafficLightGreen.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterialsG);
+    console.log('Traffic light (green) model loaded successfully');
+  } else {
+    baseTrafficLightGreen.prepareVAO(gl, programInfo);
+    console.log('Using default cube for green traffic lights');
   }
 
   // Create road model from OBJ
@@ -252,6 +286,7 @@ function setupObjects(scene, gl, programInfo) {
   scene.baseCar = baseCar;
   scene.baseBuilding = baseBuilding;
   scene.baseTrafficLight = baseTrafficLight;
+  scene.baseTrafficLightGreen = baseTrafficLightGreen;
   scene.baseRoad = baseRoad;
 
   // Setup cars with car model
@@ -279,19 +314,21 @@ function setupObjects(scene, gl, programInfo) {
     agent.arrays = baseBuilding.arrays;
     agent.bufferInfo = baseBuilding.bufferInfo;
     agent.vao = baseBuilding.vao;
-    agent.scale = { x: 0.03, y: 0.05, z: 0.03 };
+    agent.scale = { x: 0.2, y: 0.2, z: 0.2 }; //{ x: 0.03, y: 0.05, z: 0.03 }
     agent.color = [0.7, 0.7, 0.7, 1.0];
     scene.addObject(agent);
   }
 
+  // Setup traffic lights with traffic light model (default: verde)
   for (const light of trafficLights) {
-    light.arrays = baseTrafficLight.arrays;
-    light.bufferInfo = baseTrafficLight.bufferInfo;
-    light.vao = baseTrafficLight.vao;
+    light.arrays = baseTrafficLightGreen.arrays;
+    light.bufferInfo = baseTrafficLightGreen.bufferInfo;
+    light.vao = baseTrafficLightGreen.vao;
     light.scale = { x: 0.01, y: 0.01, z: 0.01 };
     
     const isGreen = light.state === true || light.state === "True" || light.state === "true";
     light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
+    light.state = light.state || true; // Default verde
     
     scene.addObject(light);
   }
@@ -355,6 +392,26 @@ function updateSceneObjects() {
     return currentAgentIds.has(obj.id);
   });
   
+  // Actualizar VAO de semáforos según su estado
+  for (const light of trafficLights) {
+    const sceneLight = scene.objects.find(obj => obj.id === light.id);
+    if (sceneLight) {
+      if (light.state === true) {
+        // Verde
+        sceneLight.arrays = scene.baseTrafficLightGreen.arrays;
+        sceneLight.bufferInfo = scene.baseTrafficLightGreen.bufferInfo;
+        sceneLight.vao = scene.baseTrafficLightGreen.vao;
+      } else {
+        // Rojo
+        sceneLight.arrays = scene.baseTrafficLight.arrays;
+        sceneLight.bufferInfo = scene.baseTrafficLight.bufferInfo;
+        sceneLight.vao = scene.baseTrafficLight.vao;
+      }
+      sceneLight.state = light.state;
+    }
+  }
+  
+  // Solo actualizar carros (agents), no los objetos estáticos
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
@@ -464,7 +521,7 @@ async function drawScene() {
   then = now;
 
   // Clear the canvas
-  gl.clearColor(0, 0, 0, 1);
+  gl.clearColor(0.53, 0.81, 0.92, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
   // tell webgl to cull faces
@@ -474,6 +531,10 @@ async function drawScene() {
   scene.camera.checkKeys();
   const viewProjectionMatrix = setupViewProjection(gl);
 
+  // Draw skybox first
+  drawSkybox(gl, viewProjectionMatrix);
+
+  // Switch to phong program for objects
   gl.useProgram(phongProgramInfo.program);
 
   let globalUniforms = {
@@ -543,6 +604,104 @@ function setupViewProjection(gl) {
 // Setup a ui.
 function setupUI() {
   // Empty for now
+}
+
+// Setup skybox
+function setupSkybox() {
+  // Create a quad that covers the entire canvas
+  const positions = new Float32Array([
+    -1, -1,
+     1, -1,
+    -1,  1,
+    -1,  1,
+     1, -1,
+     1,  1,
+  ]);
+  
+  skyboxBufferInfo = twgl.createBufferInfoFromArrays(gl, {
+    a_position: { numComponents: 2, data: positions },
+  });
+  
+  skyboxVAO = twgl.createVAOFromBufferInfo(gl, skyboxProgramInfo, skyboxBufferInfo);
+  
+  // Load cubemap textures
+  skyboxTexture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
+  
+  const faceInfos = [
+    { target: gl.TEXTURE_CUBE_MAP_POSITIVE_X, url: '../assets/maps/posx.jpg' },
+    { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_X, url: '../assets/maps/negx.jpg' },
+    { target: gl.TEXTURE_CUBE_MAP_POSITIVE_Y, url: '../assets/maps/posy.jpg' },
+    { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, url: '../assets/maps/negy.jpg' },
+    { target: gl.TEXTURE_CUBE_MAP_POSITIVE_Z, url: '../assets/maps/posz.jpg' },
+    { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, url: '../assets/maps/negz.jpg' },
+  ];
+  
+  faceInfos.forEach((faceInfo) => {
+    const { target, url } = faceInfo;
+    
+    // Setup each face with a temporary 1x1 blue pixel
+    const level = 0;
+    const internalFormat = gl.RGBA;
+    const width = 1;
+    const height = 1;
+    const format = gl.RGBA;
+    const type = gl.UNSIGNED_BYTE;
+    const pixel = new Uint8Array([0, 0, 255, 255]);
+    gl.texImage2D(target, level, internalFormat, width, height, 0, format, type, pixel);
+    
+    // Load the actual image
+    const image = new Image();
+    image.src = url;
+    image.addEventListener('load', function() {
+      gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
+      gl.texImage2D(target, level, internalFormat, format, type, image);
+      gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    });
+  });
+  
+  gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+  gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+}
+
+// Draw skybox
+function drawSkybox(gl, viewProjectionMatrix) {
+  gl.useProgram(skyboxProgramInfo.program);
+  gl.bindVertexArray(skyboxVAO);
+  
+  // Disable depth writing (but keep depth test)
+  gl.depthFunc(gl.LEQUAL);
+  
+  // Get view matrix without translation
+  const cameraPosition = scene.camera.posArray;
+  const target = scene.camera.targetArray;
+  const up = [0, 1, 0];
+  const cameraMatrix = M4.lookAt(cameraPosition, target, up);
+  const viewMatrix = M4.inverse(cameraMatrix);
+  
+  // Remove translation from view matrix
+  const viewDirectionMatrix = viewMatrix.slice();
+  viewDirectionMatrix[12] = 0;
+  viewDirectionMatrix[13] = 0;
+  viewDirectionMatrix[14] = 0;
+  
+  // Get projection matrix
+  const fov = 60 * Math.PI / 180;
+  const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
+  const projectionMatrix = M4.perspective(fov, aspect, 1, 200);
+  
+  const viewDirectionProjectionMatrix = M4.multiply(projectionMatrix, viewDirectionMatrix);
+  const viewDirectionProjectionInverse = M4.inverse(viewDirectionProjectionMatrix);
+  
+  twgl.setUniforms(skyboxProgramInfo, {
+    u_viewDirectionProjectionInverse: viewDirectionProjectionInverse,
+    u_skybox: skyboxTexture,
+  });
+  
+  twgl.drawBufferInfo(gl, skyboxBufferInfo);
+  
+  // Reset depth function
+  gl.depthFunc(gl.LESS);
 }
 
 main();

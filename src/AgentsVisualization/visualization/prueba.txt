@@ -1,0 +1,37 @@
+for (const agent of obstacles) {
+    agent.arrays = baseBuilding.arrays;
+    agent.bufferInfo = baseBuilding.bufferInfo;
+    agent.vao = baseBuilding.vao;
+    
+    // Define posiciones de edificios grandes (ajusta según tu mapa)
+    const largeBuildings = [
+      { x: 3, z: 3 },   // Coordenadas donde quieres edificios grandes
+      { x: 20, z: 15 }, // Agrega más según necesites
+    ];
+    
+    // Define edificios tipo torre (extra grandes)
+    const towerBuildings = [
+      { x: 10, z: 10 },
+    ];
+    
+    const isLarge = largeBuildings.some(
+      pos => Math.abs(agent.posArray[0] - pos.x) < 0.1 && Math.abs(agent.posArray[2] - pos.z) < 0.1
+    );
+    
+    const isTower = towerBuildings.some(
+      pos => Math.abs(agent.posArray[0] - pos.x) < 0.1 && Math.abs(agent.posArray[2] - pos.z) < 0.1
+    );
+    
+    if (isTower) {
+      agent.scale = { x: 0.09, y: 0.2, z: 0.09 }; // Torre (muy grande)
+      agent.color = [0.5, 0.5, 0.6, 1.0]; // Color diferente para torres
+    } else if (isLarge) {
+      agent.scale = { x: 0.06, y: 0.1, z: 0.06 }; // Edificio grande
+      agent.color = [0.6, 0.6, 0.65, 1.0]; // Color ligeramente diferente
+    } else {
+      agent.scale = { x: 0.03, y: 0.05, z: 0.03 }; // Normal
+      agent.color = [0.7, 0.7, 0.7, 1.0];
+    }
+    
+    scene.addObject(agent);
+  }

@@ -17,7 +17,8 @@ class Object3D {
         rotation=[0, 0, 0],
         scale=[1, 1, 1],
         color=[Math.random(), Math.random(), Math.random(), 1.0],
-        invertFaces=false) {
+        invertFaces=false,
+        invertNormals=null) {
 
         this.id = id;
         // Initial transformations
@@ -50,6 +51,7 @@ class Object3D {
         this.shininess = 100;
         this.texture = undefined;
         this.invertFaces = invertFaces;
+        this.invertNormals = invertNormals;
         // Properties for rendering in WebGL
         this.arrays = undefined;
         this.bufferInfo = undefined;
@@ -82,7 +84,7 @@ class Object3D {
             this.arrays = cubeFaceColors(1);
         } else {
             // Or using an obj file
-            this.arrays = loadObj(objData, materials, this.invertFaces);
+            this.arrays = loadObj(objData, materials, this.invertFaces, this.invertNormals);
         }
         this.bufferInfo = twgl.createBufferInfoFromArrays(gl, this.arrays);
         this.vao = twgl.createVAOFromBufferInfo(gl, programInfo, this.bufferInfo);

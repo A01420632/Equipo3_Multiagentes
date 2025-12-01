@@ -13,8 +13,9 @@
  * Return an object called arrays, with the arrays necessary to build a
  * Vertex Array Object (VAO) for WebGL.
  * @param {boolean} invertFaces - Si es true, invierte el orden de los vértices de las caras
+ * @param {Array} invertNormals - Array de normales que deben tener caras invertidas (ej: [[0,1,0]] para tapa superior)
  */
-function loadObj(objString, materials = null, invertFaces = false) {
+function loadObj(objString, materials = null, invertFaces = false, invertNormals = null) {
 
     // The array with the attributes that will be passed to WebGL
     let arrays = {
@@ -125,8 +126,25 @@ function loadObj(objString, materials = null, invertFaces = false) {
         // Triangular la cara (convertir polígonos en triángulos)
         // Si la cara tiene más de 3 vértices, crear múltiples triángulos
         for (let i = 1; i < faceVertices.length - 1; i++) {
-            // Invertir el orden si invertFaces es true
-            const triangleIndices = invertFaces ? [0, i, i+1] : [0, i+1, i];
+            // Determinar si invertir basado en la normal de la cara
+            let shouldInvert = invertFaces;
+            
+            // Si se especificaron normales específicas para invertir
+            if (invertNormals && faceVertices[0].vn >= 0) {
+                const faceNormal = normals[faceVertices[0].vn];
+                // Verificar si la normal de esta cara coincide con alguna normal a invertir
+                for (let targetNormal of invertNormals) {
+                    if (Math.abs(faceNormal[0] - targetNormal[0]) < 0.01 &&
+                        Math.abs(faceNormal[1] - targetNormal[1]) < 0.01 &&
+                        Math.abs(faceNormal[2] - targetNormal[2]) < 0.01) {
+                        shouldInvert = !shouldInvert; // Toggle invert for this specific normal
+                        break;
+                    }
+                }
+            }
+            
+            // Invertir el orden si shouldInvert es true
+            const triangleIndices = shouldInvert ? [0, i, i+1] : [0, i+1, i];
             
             for (let idx of triangleIndices) {
                 const faceVertex = faceVertices[idx];

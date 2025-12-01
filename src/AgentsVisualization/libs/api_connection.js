@@ -125,10 +125,19 @@ async function getLights() {
         if (response.ok) {
             let result = await response.json();
 
-            if (obstacles.length == 0) {
+            if (trafficLights.length == 0) {
                 for (const light of result.positions) {
                     const newLight = new Object3D(light.id, [light.x, light.y, light.z]);
+                    newLight.state = light.state;
                     trafficLights.push(newLight);
+                }
+            } else {
+                // Actualizar estado de semáforos existentes
+                for (const light of result.positions) {
+                    const existingLight = trafficLights.find(l => l.id == light.id);
+                    if (existingLight) {
+                        existingLight.state = light.state;
+                    }
                 }
             }
         }

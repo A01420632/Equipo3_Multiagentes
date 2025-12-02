@@ -1,6 +1,7 @@
 #version 300 es
 in vec4 a_position;
 in vec3 a_normal;
+in vec4 a_color;
 
 // Scene uniforms
 uniform vec3 u_lightWorldPosition;
@@ -15,6 +16,7 @@ uniform mat4 u_worldViewProjection;
 out vec3 v_normal;
 out vec3 v_surfaceToLight;
 out vec3 v_surfaceToView;
+out vec4 v_color;
 
 void main() {
     // Transform the position of the vertices
@@ -32,4 +34,7 @@ void main() {
 
     // Direction from the surface to the view
     v_surfaceToView = u_viewWorldPosition - surfaceWorldPosition;
+    
+    // Pass color to fragment shader
+    v_color = a_color;
 }

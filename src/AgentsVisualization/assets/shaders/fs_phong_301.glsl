@@ -4,6 +4,7 @@ precision highp float;
 in vec3 v_normal;
 in vec3 v_surfaceToLight;
 in vec3 v_surfaceToView;
+in vec4 v_color;
 
 // Scene uniforms
 uniform vec4 u_ambientLight;
@@ -11,9 +12,6 @@ uniform vec4 u_diffuseLight;
 uniform vec4 u_specularLight;
 
 // Model uniforms
-uniform vec4 u_ambientColor;
-uniform vec4 u_diffuseColor;
-uniform vec4 u_specularColor;
 uniform float u_shininess;
 
 out vec4 outColor;
@@ -37,11 +35,11 @@ void main() {
     }
 
 
-    // Compute the three parts of the Phong lighting model
-    vec4 ambientColor = u_ambientLight * u_ambientColor;
-    vec4 diffuseColor = u_diffuseLight * u_diffuseColor * diffuse;
-    vec4 specularColor = u_specularLight * u_specularColor * specular;
+    // Compute the three parts of the Phong lighting model using vertex color
+    vec4 ambientColor = u_ambientLight * v_color;
+    vec4 diffuseColor = u_diffuseLight * v_color * diffuse;
+    vec4 specularColor = u_specularLight * vec4(1.0, 1.0, 1.0, 1.0) * specular;
 
-    // Use the color of the texture on the object
+    // Use the color from the MTL file
     outColor = ambientColor + diffuseColor + specularColor;
 }

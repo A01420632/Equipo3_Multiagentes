@@ -75,6 +75,13 @@ const DIRECTION_ANGLES = {
   "Down": 0 + angulobase // 0° (apunta hacia -Z)
 };
 
+// Helpers para interpotlacion
+function lerp(a, b, t) { 
+  return a + (b - a) * t; 
+}
+function clamp(x, min, max) { return Math.max(min, Math.min(max, x)); } // restringe movimiento a rango permitido
+
+
 // Function to load OBJ files with optional MTL
 async function loadObjFile(url) {
   try {
@@ -204,6 +211,7 @@ function angleDifference(from, to) {
   to = normalizeAngle(to);
   
   let diff = to - from;
+  
   if (diff > Math.PI) diff -= 2 * Math.PI;
   if (diff < -Math.PI) diff += 2 * Math.PI;
   
@@ -213,15 +221,15 @@ function angleDifference(from, to) {
 function getRandomCarColor() {
   const colors = [
     [1.0, 0.0, 0.0, 1.0],  // Rojo
-    [0.0, 0.0, 1.0, 1.0],  // Azul
-    [1.0, 1.0, 0.0, 1.0],  // Amarillo
-    [0.0, 1.0, 0.0, 1.0],  // Verde
-    [1.0, 0.5, 0.0, 1.0],  // Naranja
-    [0.5, 0.0, 0.5, 1.0],  // Púrpura
-    [0.0, 1.0, 1.0, 1.0],  // Cian
-    [1.0, 1.0, 1.0, 1.0],  // Blanco
-    [0.2, 0.2, 0.2, 1.0],  // Negro
-    [0.7, 0.7, 0.7, 1.0],  // Gris
+    [0.0, 0.0, 1.0],  // Azul
+    [1.0, 1.0, 0.0],  // Amarillo
+    [0.0, 1.0, 0.0],  // Verde
+    [1.0, 0.5, 0.0],  // Naranja
+    [0.5, 0.0, 0.5],  // Púrpura
+    [0.0, 1.0, 1.0],  // Cian
+    [1.0, 1.0, 1.0],  // Blanco
+    [0.2, 0.2, 0.2],  // Negro
+    [0.7, 0.7, 0.7],  // Gris
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 }
@@ -397,12 +405,10 @@ function updateSceneObjects() {
     const sceneLight = scene.objects.find(obj => obj.id === light.id);
     if (sceneLight) {
       if (light.state === true) {
-        // Verde
         sceneLight.arrays = scene.baseTrafficLightGreen.arrays;
         sceneLight.bufferInfo = scene.baseTrafficLightGreen.bufferInfo;
         sceneLight.vao = scene.baseTrafficLightGreen.vao;
       } else {
-        // Rojo
         sceneLight.arrays = scene.baseTrafficLight.arrays;
         sceneLight.bufferInfo = scene.baseTrafficLight.bufferInfo;
         sceneLight.vao = scene.baseTrafficLight.vao;
@@ -411,24 +417,59 @@ function updateSceneObjects() {
     }
   }
   
-  // Solo actualizar carros (agents), no los objetos estáticos
+  // Actualizar carros
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
     if (existingObj) {
-      existingObj.oldPosArray = [...existingObj.posArray];
-      existingObj.position = agent.position;
-      
+      // Calcular posición interpolada actual
+      let currentInterpolatedPos = existingObj.posArray;
+      if (existingObj.oldPosArray && existingObj.nextPosArray && existingObj.interpolateStart) {
+        const elapsedLocal = Date.now() - existingObj.interpolateStart;
+        const t = clamp(elapsedLocal / duration, 0, 1);
+        currentInterpolatedPos = [
+          lerp(existingObj.oldPosArray[0], existingObj.nextPosArray[0], t),
+          lerp(existingObj.oldPosArray[1], existingObj.nextPosArray[1], t),
+          lerp(existingObj.oldPosArray[2], existingObj.nextPosArray[2], t)
+        ];
+      } else {
+        currentInterpolatedPos = [...existingObj.posArray];
+      }
+
+      // Actualizar posición
+      existingObj.oldPosArray = currentInterpolatedPos;
+      existingObj.nextPosArray = [agent.position.x, agent.position.y, agent.position.z];
+      existingObj.interpolateStart = Date.now();
+      existingObj.position.x = agent.position.x;
+      existingObj.position.y = agent.position.y;
+      existingObj.position.z = agent.position.z;
+
       const nextDirection = agent.nextDir || agent.dirActual || "Down";
-      
       if (existingObj.currentDirection !== nextDirection) {
         const newAngle = directionToAngle(nextDirection);
+        const currentAngle = existingObj.rotY !== undefined ? existingObj.rotY : newAngle;
         
-        existingObj.oldRotY = existingObj.rotY;
-        existingObj.rotY = newAngle;
+        // Normalizar ángulos antes de calcular diferencia
+        const normalizeAngle = (angle) => {
+          while (angle > Math.PI) angle -= 2 * Math.PI;
+          while (angle < -Math.PI) angle += 2 * Math.PI;
+          return angle;
+        };
+        
+        const normalizedCurrent = normalizeAngle(currentAngle);
+        const normalizedNew = normalizeAngle(newAngle);
+        
+        // Calcular diferencia tomando el camino más corto
+        let diff = normalizedNew - normalizedCurrent;
+        if (diff > Math.PI) diff -= 2 * Math.PI;
+        if (diff < -Math.PI) diff += 2 * Math.PI;
+        
+        // Establecer rotación tomando en cuenta el camino más corto
+        existingObj.oldRotY = normalizedCurrent;
+        existingObj.rotY = normalizedCurrent + diff;
         existingObj.currentDirection = nextDirection;
+        existingObj.rotateStart = Date.now();
       }
-      
     } else {
       agent.arrays = scene.baseCar.arrays;
       agent.bufferInfo = scene.baseCar.bufferInfo;
@@ -450,29 +491,48 @@ function updateSceneObjects() {
   }
 }
 
-function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
-  let v3_tra = object.posArray;
-  
-  if (object.oldPosArray && fract < 1.0) {
-    const smoothFract = fract * fract * (3 - 2 * fract); // smoothstep
-    v3_tra = [
-      object.oldPosArray[0] + (object.posArray[0] - object.oldPosArray[0]) * smoothFract,
-      object.oldPosArray[1] + (object.posArray[1] - object.oldPosArray[1]) * smoothFract,
-      object.oldPosArray[2] + (object.posArray[2] - object.oldPosArray[2]) * smoothFract
-    ];
+function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) {
+  // Calcular fract local
+  let localFract = globalFract;
+  if (object.interpolateStart) {
+    const elapsedLocal = Date.now() - object.interpolateStart;
+    localFract = clamp(elapsedLocal / duration, 0, 1);
   }
+
+  // Interpolar posición
+  let v3_tra;
+  if (object.oldPosArray && object.nextPosArray && localFract < 1.0) {
+    v3_tra = [
+      lerp(object.oldPosArray[0], object.nextPosArray[0], localFract),
+      lerp(object.oldPosArray[1], object.nextPosArray[1], localFract),
+      lerp(object.oldPosArray[2], object.nextPosArray[2], localFract)
+    ];
+  } else if (object.nextPosArray && localFract >= 1.0) {
+    v3_tra = [...object.nextPosArray];
+    delete object.oldPosArray;
+    delete object.nextPosArray;
+    delete object.interpolateStart;
+  } else {
+    v3_tra = object.posArray;
+  }
+
+  const rotDuration = duration * 0.7;
+  let rotY = object.rotRad?.y || 0;
   
-  let rotY = object.rotRad.y;
-  
-  if (object.oldRotY !== undefined && object.rotY !== undefined && fract < 1.0) {
-    const smoothFract = fract * fract * (3 - 2 * fract); // smoothstep
-    // Calcular diferencia usando camino más corto
-    const diff = angleDifference(object.oldRotY, object.rotY);
-    rotY = object.oldRotY + diff * smoothFract;
+  if (object.oldRotY !== undefined && object.rotY !== undefined) {
+    let rotElapsed = object.rotateStart ? (Date.now() - object.rotateStart) : 0;
+    let rotFract = clamp(rotElapsed / rotDuration, 0, 1);
+    
+    rotY = lerp(object.oldRotY, object.rotY, rotFract);
+    
+    if (rotFract >= 1.0) {
+      object.oldRotY = undefined;
+      object.rotateStart = undefined;
+    }
   } else if (object.rotY !== undefined) {
     rotY = object.rotY;
   }
-  
+
   let v3_sca = object.scaArray;
 
   const scaMat = M4.scale(v3_sca);
@@ -480,7 +540,7 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
   const rotYMat = M4.rotationY(rotY);
   const rotZMat = M4.rotationZ(object.rotRad.z);
   const traMat = M4.translation(v3_tra);
-
+  
   let transforms = M4.identity();
   transforms = M4.multiply(scaMat, transforms);
   transforms = M4.multiply(rotXMat, transforms);
@@ -490,10 +550,7 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
 
   object.matrix = transforms;
 
-  // Apply the projection to the final matrix for the
-  // World-View-Projection
   const wvpMat = M4.multiply(viewProjectionMatrix, transforms);
-
   const normalMat = M4.transpose(M4.inverse(object.matrix));
 
   let objectUniforms = {

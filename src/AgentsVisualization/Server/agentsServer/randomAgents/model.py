@@ -15,8 +15,7 @@ class CityModel(Model):
         seed: Random seed for the model
     """
 
-    def __init__(self, N, seed=42, spawnSteps = 10):
-
+    def __init__(self, N, seed=42, spawnSteps=10):
         super().__init__(seed=seed)
         base_dir = os.path.dirname(os.path.abspath(__file__))
         
@@ -28,6 +27,7 @@ class CityModel(Model):
         self.traffic_lights = []
         self.destinations = []
         self.spawnSteps = spawnSteps
+        self.carsSpawnedThisStep = 0
 
         # Métricas
         self.carCounter = 0
@@ -40,7 +40,9 @@ class CityModel(Model):
         
         self.cars_arrived_this_step = 0
         self.traffic_jams_this_step = 0
-        self.prev_embotellamientos = 0 
+        self.prev_embotellamientos = 0
+        
+        self.agent_id_counter = 0
 
         self.datacollector = mesa.DataCollector(
             model_reporters={
@@ -80,22 +82,29 @@ class CityModel(Model):
                     cell = self.grid[cell_pos]
                     
                     if col in ["v", "^", ">", "<"]:
-                        agent = Road(self, cell, dataDictionary[col])
+                        agent = Road(self, cell, self.get_unique_id(), dataDictionary[col])
                     elif col in ["S", "s"]:
                         agent = Traffic_Light(
                             self,
                             cell,
+                            self.get_unique_id(),
                             False if col == "S" else True,
                             int(dataDictionary[col]),
                         )
                         self.traffic_lights.append(agent)
                     elif col == "#":
-                        agent = Obstacle(self, cell)
+                        agent = Obstacle(self, cell, self.get_unique_id())
                     elif col == "D":
-                        agent = Destination(self, cell)
+                        agent = Destination(self, cell, self.get_unique_id())
                         self.destinations.append(agent) 
         
         self.running = True
+    
+    def get_unique_id(self):
+        """ Genera unique_id secuencial"""
+        uid = self.agent_id_counter
+        self.agent_id_counter += 1
+        return uid
 
     def spawnCars(self): 
         """Spawn a new car at a random corner of the map with a random destination"""
@@ -110,7 +119,6 @@ class CityModel(Model):
         
         for corner_index, corner_coords in enumerate(corners):
             empty_roads = []
-            
             for coord in corner_coords:
                 try:
                     if coord[0] >= self.width or coord[1] >= self.height or coord[0] < 0 or coord[1] < 0:
@@ -119,10 +127,8 @@ class CityModel(Model):
                     cell = self.grid[coord]
                     has_road = any(isinstance(obj, Road) for obj in cell.agents)
                     has_car = any(isinstance(obj, Car) for obj in cell.agents)
-                    
                     if has_road and not has_car:
                         empty_roads.append(cell)
-                        
                 except Exception as e:
                     print(f"Error checking cell {coord}: {e}")
                     continue
@@ -130,22 +136,25 @@ class CityModel(Model):
             if empty_roads and self.destinations:
                 spawn_cell = self.random.choice(empty_roads)
                 random_destination_agent = self.random.choice(self.destinations)
-                destination_cell = random_destination_agent.cell  
                 
-                car = Car(self, spawn_cell, self.carCounter, dest=destination_cell)
-                self.carCounter += 1
-                self.totCarsSpawned += 1 
-                
+                car = Car(self, spawn_cell, self.get_unique_id(), dest=random_destination_agent)
+                self.totCarsSpawned += 1
+                self.carsSpawnedThisStep += 1
+
     def step(self):
         """Advance the model by one step."""
-        self.cars_arrived_this_step = 0
-        
-        if self.steps == 0:
+        self.cars_arrived_this_step = 0       
+        if (self.steps == 0) or (self.steps % self.spawnSteps == 0):
+            self.carsSpawnedThisStep = 0
             self.spawnCars()
-        # Spawn cada X steps
-        elif self.steps % self.spawnSteps == 0:
-            self.spawnCars()
-        
+            if self.steps != 0 and self.carsSpawnedThisStep < 4:
+                print(f"   GAME OVER en step {self.steps}")
+                print(f"   Spawn {self.carsSpawnedThisStep}/4 cars")
+                print(f"   Total: {self.totCarsSpawned}")
+                print(f"   Total successful: {self.totCarsArrived}")
+                print(f"   In transit cars: {self.count_active_cars(self)}")
+                self.running = False
+                return  
         cars_before = self.count_active_cars(self)
         embotellamientos_before = self.embotellamientos
         

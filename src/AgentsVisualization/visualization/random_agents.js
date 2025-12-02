@@ -241,8 +241,8 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for cars');
   }
 
-  // Create building model from OBJ (invertir solo la tapa superior)
-  const baseBuilding = new Object3D(-3, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false, [[0, 1, 0]]);
+  // Create building model from OBJ (invertir caras)
+  const baseBuilding = new Object3D(-3, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (buildingObjData) {
     baseBuilding.prepareVAO(gl, programInfo, buildingObjData, buildingMaterials);
     console.log('Building model loaded successfully');
@@ -500,10 +500,6 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, fract) {
     u_world: transforms,
     u_worldInverseTransform: normalMat,
     u_worldViewProjection: wvpMat,
-
-    u_ambientColor: object.color,
-    u_diffuseColor: object.color,
-    u_specularColor: object.color,
     u_shininess: object.shininess || 200.0,
   }
   twgl.setUniforms(programInfo, objectUniforms);

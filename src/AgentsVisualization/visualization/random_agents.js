@@ -60,6 +60,11 @@ let buildingObjData = null;
 let trafficLightObjData = null;
 let roadObjData = null;
 
+// Variables para animación del caballo
+let horseAnimationFrames = []; // Array con los 4 frames de animación
+let horseIdleObjData = null;   // Frame IDLE
+let horseMaterials = null;     // Materiales compartidos
+
 // Global variables for MTL materials
 let carMaterials = null;
 let buildingMaterials = null;
@@ -67,7 +72,7 @@ let trafficLightMaterials = null;
 let trafficLightMaterialsG = null;
 let roadMaterials = null;
 
-let angulobase = -Math.PI / 2;
+let angulobase = Math.PI;//-Math.PI / 2;
 const DIRECTION_ANGLES = {
   "Right": -Math.PI / 2 + angulobase, // -90° (apunta hacia +X)
   "Left": Math.PI / 2 + angulobase, // 90° (apunta hacia -X)
@@ -128,20 +133,35 @@ async function main() {
 
   // Load OBJ models from assets folder
   console.log('Loading OBJ models...');
-  const carData = await loadObjFile('../assets/models/car2.obj');
+  
+  // Cargar frames de animación del caballo
+  const horse1Data = await loadObjFile('../assets/models/Horse1.obj');
+  const horse2Data = await loadObjFile('../assets/models/Horse2.obj');
+  const horse3Data = await loadObjFile('../assets/models/Horse3.obj');
+  const horse4Data = await loadObjFile('../assets/models/Horse4.obj');
+  const horseIdleData = await loadObjFile('../assets/models/HorseIdle.obj');
+  
+  // Guardar los frames de animación
+  horseAnimationFrames = [
+    horse1Data ? horse1Data.objData : null,
+    horse2Data ? horse2Data.objData : null,
+    horse3Data ? horse3Data.objData : null,
+    horse4Data ? horse4Data.objData : null
+  ];
+  
+  horseIdleObjData = horseIdleData ? horseIdleData.objData : null;
+  horseMaterials = horse1Data ? horse1Data.materials : null;
+  
   const buildingData = await loadObjFile('../assets/models/House.obj');
   const trafficLightData = await loadObjFile('../../assets/models/Semaforo.obj');
   const trafficLightDataGreen = await loadObjFile('../../assets/models/SemaforoVerde.obj');
   const roadData = await loadObjFile('../assets/models/Road.obj');
   
   // Extract OBJ data and materials
-  carObjData = carData ? carData.objData : null;
   buildingObjData = buildingData ? buildingData.objData : null;
   trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
-  //trafficLightObjDataG = trafficLightDataG ? trafficLightDataG.objData : null;
   roadObjData = roadData ? roadData.objData : null;
   
-  carMaterials = carData ? carData.materials : null;
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
   trafficLightMaterialsG = trafficLightDataGreen ? trafficLightDataGreen.materials : null;
@@ -239,14 +259,26 @@ function setupObjects(scene, gl, programInfo) {
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
-  // Create car model from OBJ (invertir caras)
-  const baseCar = new Object3D(-2, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
-  if (carObjData) {
-    baseCar.prepareVAO(gl, programInfo, carObjData, carMaterials);
-    console.log('Car model loaded successfully');
+  // Create horse animation frames
+  const baseHorseFrames = [];
+  for (let i = 0; i < horseAnimationFrames.length; i++) {
+    const horseFrame = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    if (horseAnimationFrames[i]) {
+      horseFrame.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterials);
+      console.log(`Horse animation frame ${i + 1} loaded successfully`);
+    } else {
+      horseFrame.prepareVAO(gl, programInfo);
+    }
+    baseHorseFrames.push(horseFrame);
+  }
+  
+  // Create horse IDLE frame
+  const baseHorseIdle = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  if (horseIdleObjData) {
+    baseHorseIdle.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterials);
+    console.log('Horse IDLE model loaded successfully');
   } else {
-    baseCar.prepareVAO(gl, programInfo);
-    console.log('Using default cube for cars');
+    baseHorseIdle.prepareVAO(gl, programInfo);
   }
 
   // Create building model from OBJ (invertir caras)
@@ -291,18 +323,20 @@ function setupObjects(scene, gl, programInfo) {
 
   // Store the base models for later use
   scene.baseCube = baseCube;
-  scene.baseCar = baseCar;
+  scene.baseHorseFrames = baseHorseFrames;
+  scene.baseHorseIdle = baseHorseIdle;
   scene.baseBuilding = baseBuilding;
   scene.baseTrafficLight = baseTrafficLight;
   scene.baseTrafficLightGreen = baseTrafficLightGreen;
   scene.baseRoad = baseRoad;
 
-  // Setup cars with car model
+  // Setup horses with IDLE model
   for (const agent of agents) {
-    agent.arrays = baseCar.arrays;
-    agent.bufferInfo = baseCar.bufferInfo;
-    agent.vao = baseCar.vao;
-    agent.scale = { x: 0.2, y: 0.2, z: 0.2 };
+    // Inicializar con frame IDLE
+    agent.arrays = baseHorseIdle.arrays;
+    agent.bufferInfo = baseHorseIdle.bufferInfo;
+    agent.vao = baseHorseIdle.vao;
+    agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
     
     agent.color = getRandomCarColor();
     
@@ -313,6 +347,11 @@ function setupObjects(scene, gl, programInfo) {
     agent.oldRotY = initialAngle;
     agent.rotY = initialAngle;
     agent.oldPosArray = [...agent.posArray];
+    
+    // Variables para animación
+    agent.currentFrame = 0;
+    agent.isMoving = false;
+    agent.animationStartTime = Date.now();
     
     scene.addObject(agent);
   }
@@ -417,7 +456,7 @@ function updateSceneObjects() {
     }
   }
   
-  // Actualizar carros
+  // Actualizar caballos
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
@@ -437,12 +476,46 @@ function updateSceneObjects() {
       }
 
       // Actualizar posición
+      const oldPos = [...currentInterpolatedPos];
+      const newPos = [agent.position.x, agent.position.y, agent.position.z];
+      
       existingObj.oldPosArray = currentInterpolatedPos;
-      existingObj.nextPosArray = [agent.position.x, agent.position.y, agent.position.z];
+      existingObj.nextPosArray = newPos;
       existingObj.interpolateStart = Date.now();
       existingObj.position.x = agent.position.x;
       existingObj.position.y = agent.position.y;
       existingObj.position.z = agent.position.z;
+      
+      // Determinar si está en movimiento
+      const isMoving = Math.abs(oldPos[0] - newPos[0]) > 0.01 || Math.abs(oldPos[2] - newPos[2]) > 0.01;
+      
+      // Actualizar VAO según si está en movimiento o idle
+      if (isMoving && !existingObj.isMoving) {
+        // Cambió de idle a movimiento
+        existingObj.isMoving = true;
+        existingObj.animationStartTime = Date.now();
+      } else if (!isMoving && existingObj.isMoving) {
+        // Cambió de movimiento a idle
+        existingObj.isMoving = false;
+        existingObj.arrays = scene.baseHorseIdle.arrays;
+        existingObj.bufferInfo = scene.baseHorseIdle.bufferInfo;
+        existingObj.vao = scene.baseHorseIdle.vao;
+      }
+      
+      // Si está en movimiento, actualizar frame de animación
+      if (existingObj.isMoving) {
+        const animSpeed = 120; // ms por frame (ajusta para velocidad de animación)
+        const elapsed = Date.now() - (existingObj.animationStartTime || Date.now());
+        const frameIndex = Math.floor(elapsed / animSpeed) % 4;
+        
+        if (frameIndex !== existingObj.currentFrame) {
+          existingObj.currentFrame = frameIndex;
+          const horseFrame = scene.baseHorseFrames[frameIndex];
+          existingObj.arrays = horseFrame.arrays;
+          existingObj.bufferInfo = horseFrame.bufferInfo;
+          existingObj.vao = horseFrame.vao;
+        }
+      }
 
       const nextDirection = agent.nextDir || agent.dirActual || "Down";
       if (existingObj.currentDirection !== nextDirection) {
@@ -471,10 +544,10 @@ function updateSceneObjects() {
         existingObj.rotateStart = Date.now();
       }
     } else {
-      agent.arrays = scene.baseCar.arrays;
-      agent.bufferInfo = scene.baseCar.bufferInfo;
-      agent.vao = scene.baseCar.vao;
-      agent.scale = { x: 0.2, y: 0.2, z: 0.2 };
+      agent.arrays = scene.baseHorseIdle.arrays;
+      agent.bufferInfo = scene.baseHorseIdle.bufferInfo;
+      agent.vao = scene.baseHorseIdle.vao;
+      agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
       
       agent.color = getRandomCarColor();
       
@@ -485,6 +558,10 @@ function updateSceneObjects() {
       agent.oldRotY = initialAngle;
       agent.rotY = initialAngle;
       agent.oldPosArray = [...agent.posArray];
+      
+      agent.currentFrame = 0;
+      agent.isMoving = false;
+      agent.animationStartTime = Date.now();
       
       scene.addObject(agent);
     }

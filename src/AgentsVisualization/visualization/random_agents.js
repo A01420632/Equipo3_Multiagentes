@@ -153,8 +153,8 @@ async function main() {
   horseMaterials = horse1Data ? horse1Data.materials : null;
   
   const buildingData = await loadObjFile('../assets/models/House.obj');
-  const trafficLightData = await loadObjFile('../../assets/models/Semaforo.obj');
-  const trafficLightDataGreen = await loadObjFile('../../assets/models/SemaforoVerde.obj');
+  const trafficLightData = await loadObjFile('../assets/models/Lantern.obj'); //Semaforo -> Tambien cambiar escala
+  const trafficLightDataGreen = await loadObjFile('../assets/models/LanternOn.obj'); //SemaforoVerde
   const roadData = await loadObjFile('../assets/models/Road.obj');
   
   // Extract OBJ data and materials
@@ -362,7 +362,7 @@ function setupObjects(scene, gl, programInfo) {
     agent.arrays = baseBuilding.arrays;
     agent.bufferInfo = baseBuilding.bufferInfo;
     agent.vao = baseBuilding.vao;
-    agent.scale = { x: 0.2, y: 0.2, z: 0.2 }; //{ x: 0.03, y: 0.05, z: 0.03 }
+    agent.scale = { x: 0.2, y: 0.4, z: 0.2 }; //{ x: 0.03, y: 0.05, z: 0.03 }
     agent.color = [0.7, 0.7, 0.7, 1.0];
     agent.position.y += 0.3; // Elevar edificios sobre las calles
     scene.addObject(agent);
@@ -373,7 +373,7 @@ function setupObjects(scene, gl, programInfo) {
     light.arrays = baseTrafficLightGreen.arrays;
     light.bufferInfo = baseTrafficLightGreen.bufferInfo;
     light.vao = baseTrafficLightGreen.vao;
-    light.scale = { x: 0.01, y: 0.01, z: 0.01 };
+    light.scale = { x: 0.2, y: 0.2, z: 0.2 }; //Semaforos: { x: 0.1, y: 0.1, z: 0.1 };
     
     const isGreen = light.state === true || light.state === "True" || light.state === "true";
     light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];

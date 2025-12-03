@@ -61,7 +61,7 @@ class CityModel(Model):
             }
         )
 
-        map_path = os.path.join(base_dir, "city_files", "2023_base.txt")
+        map_path = os.path.join(base_dir, "city_files", "2025_base.txt")
         with open(map_path) as baseFile:
             lines = baseFile.readlines()
             lines = [line.strip() for line in lines]

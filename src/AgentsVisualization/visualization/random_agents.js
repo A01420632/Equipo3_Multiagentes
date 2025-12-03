@@ -59,6 +59,7 @@ let carObjData = null;
 let buildingObjData = null;
 let trafficLightObjData = null;
 let roadObjData = null;
+let destinationObjData = null;
 
 // Variables para animación del caballo
 let horseAnimationFrames = []; // Array con los 4 frames de animación
@@ -71,6 +72,7 @@ let buildingMaterials = null;
 let trafficLightMaterials = null;
 let trafficLightMaterialsG = null;
 let roadMaterials = null;
+let destinationMaterials = null;
 
 let angulobase = Math.PI;//-Math.PI / 2;
 const DIRECTION_ANGLES = {
@@ -156,16 +158,19 @@ async function main() {
   const trafficLightData = await loadObjFile('../../assets/models/Semaforo.obj');
   const trafficLightDataGreen = await loadObjFile('../../assets/models/SemaforoVerde.obj');
   const roadData = await loadObjFile('../assets/models/Road.obj');
+  const destinationData = await loadObjFile('../assets/models/Stable.obj');
   
   // Extract OBJ data and materials
   buildingObjData = buildingData ? buildingData.objData : null;
   trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
   roadObjData = roadData ? roadData.objData : null;
+  destinationObjData = destinationData ? destinationData.objData : null;
   
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
   trafficLightMaterialsG = trafficLightDataGreen ? trafficLightDataGreen.materials : null;
   roadMaterials = roadData ? roadData.materials : null;
+  destinationMaterials = destinationData ? destinationData.materials : null;
   
   console.log('OBJ models and materials loaded');
 
@@ -320,6 +325,14 @@ function setupObjects(scene, gl, programInfo) {
     baseRoad.prepareVAO(gl, programInfo);
     console.log('Using default cube for roads');
   }
+  const baseDestination = new Object3D(-7, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
+  if (destinationObjData) {
+    baseDestination.prepareVAO(gl, programInfo, destinationObjData, destinationMaterials);
+    console.log('Destination model loaded successfully');
+  } else {
+    baseDestination.prepareVAO(gl, programInfo);
+    console.log('Using default cube for destinations');
+  }
 
   // Store the base models for later use
   scene.baseCube = baseCube;
@@ -329,6 +342,7 @@ function setupObjects(scene, gl, programInfo) {
   scene.baseTrafficLight = baseTrafficLight;
   scene.baseTrafficLightGreen = baseTrafficLightGreen;
   scene.baseRoad = baseRoad;
+  scene.baseDestination = baseDestination;
 
   // Setup horses with IDLE model
   for (const agent of agents) {
@@ -403,6 +417,27 @@ function setupObjects(scene, gl, programInfo) {
     }
     
     scene.addObject(road);
+  }
+  // Setup destinations with destination model
+  for (const dest of destinations) {
+    dest.arrays = baseDestination.arrays;
+    dest.bufferInfo = baseDestination.bufferInfo;
+    dest.vao = baseDestination.vao;
+    dest.scale = { x: 0.05, y: 0.1, z: 0.05 };
+    
+    // Apply color from MTL if available
+    if (destinationMaterials && Object.keys(destinationMaterials).length > 0) {
+      const firstMaterial = Object.values(destinationMaterials)[0];
+      if (firstMaterial && firstMaterial.Kd) {
+        dest.color = [...firstMaterial.Kd, 1.0];
+      } else {
+        dest.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+      }
+    } else {
+      dest.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+    }
+    
+    scene.addObject(dest);
   }
   
   // Agregar calles debajo de edificios

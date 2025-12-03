@@ -379,7 +379,7 @@ function setupObjects(scene, gl, programInfo) {
   }
 
   // Create tree model from OBJ
-  const baseTree = new Object3D(-8, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  const baseTree = new Object3D(-8, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (treeObjData) {
     baseTree.prepareVAO(gl, programInfo, treeObjData, treeMaterials);
     console.log('Tree model loaded successfully');
@@ -478,6 +478,7 @@ function setupObjects(scene, gl, programInfo) {
   }
 
   // Setup traffic lights with traffic light model (default: verde)
+  let trafficLightIndex = 1; // Empezar desde 1, el 0 es la luz global
   for (const light of trafficLights) {
     light.arrays = baseTrafficLightGreen.arrays;
     light.bufferInfo = baseTrafficLightGreen.bufferInfo;
@@ -488,6 +489,7 @@ function setupObjects(scene, gl, programInfo) {
     light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
     light.state = light.state || true; // Default verde
     light.position.y += 0.3; // Elevar semáforos sobre las calles
+    light.lightIndex = null; // Se asignará dinámicamente en updateTrafficLights
     
     scene.addObject(light);
   }
@@ -582,7 +584,7 @@ function setupObjects(scene, gl, programInfo) {
     
     scene.addObject(lightRoad);
   }
-  
+   
   // Agregar calles debajo de destinos
   for (const dest of destinations) {
     const destRoad = new Object3D(roadIdCounter--);
@@ -617,13 +619,40 @@ async function updateTrafficLights() {
     if (response.ok) {
       let result = await response.json();
       
+      // Primero, eliminar todas las luces de linternas (mantener solo la luz global en index 0)
+      scene.lights = scene.lights.slice(0, 1);
+      
+      // Resetear todos los lightIndex
+      for (const obj of scene.objects) {
+        if (obj.lightIndex !== undefined) {
+          obj.lightIndex = null;
+        }
+      }
+      
+      // Ahora crear luces solo para semáforos en verde
+      let nextLightIndex = 1;
       for (const lightData of result.positions) {
         const lightObj = scene.objects.find(obj => obj.id == lightData.id);
         
         if (lightObj) {
           const isGreen = lightData.state === true || lightData.state === "true" || lightData.state === 1;
+          
           lightObj.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
           lightObj.state = isGreen;
+          
+          // Solo crear luz si está en verde
+          if (isGreen) {
+            const lanternLight = new Light3D(
+              nextLightIndex,
+              [lightObj.position.x, lightObj.position.y + 0.8, lightObj.position.z],
+              [0.0, 0.0, 0.0, 1.0],
+              [0.8, 0.7, 0.3, 1.0],
+              [0.6, 0.5, 0.2, 1.0]
+            );
+            scene.addLight(lanternLight);
+            lightObj.lightIndex = nextLightIndex;
+            nextLightIndex++;
+          }
         }
       }
     }
@@ -941,17 +970,62 @@ async function drawScene() {
   // Switch to phong program for objects
   gl.useProgram(phongProgramInfo.program);
 
-  let globalUniforms = {
-    u_viewWorldPosition: scene.camera.posArray,
-    u_lightWorldPosition: scene.lights[0].posArray,
-    u_ambientLight: scene.lights[0].ambient,
-    u_diffuseLight: scene.lights[0].diffuse,
-    u_specularLight: scene.lights[0].specular,
-  }
-  twgl.setUniforms(phongProgramInfo, globalUniforms);
-
   // Draw the objects
   for (let object of scene.objects) {
+    // Encontrar la linterna encendida más cercana (si existe)
+    let closestLantern = null;
+    let closestDistance = Infinity;
+    
+    for (let i = 1; i < scene.lights.length; i++) { // Empezar desde 1 (saltar luz global)
+      const light = scene.lights[i];
+      const dx = light.posArray[0] - object.position.x;
+      const dy = light.posArray[1] - object.position.y;
+      const dz = light.posArray[2] - object.position.z;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      
+      // Solo considerar luces activas (amarillas) y dentro del radio
+      if (distance < closestDistance && distance < 5.0 && 
+          light.diffuse[0] > 0) { // Verificar que la luz esté "encendida"
+        closestDistance = distance;
+        closestLantern = light;
+      }
+    }
+    
+    // Configurar uniforms para este objeto
+    if (closestLantern) {
+      // Hay una linterna cerca: combinar luz global + luz de linterna
+      const attenuation = Math.max(0, 1.0 - (closestDistance / 5.0)); // Fade out con distancia
+      
+      let combinedUniforms = {
+        u_viewWorldPosition: scene.camera.posArray,
+        u_lightWorldPosition: closestLantern.posArray, // Usar posición de la linterna
+        u_ambientLight: scene.lights[0].ambient, // Mantener ambiente global
+        u_diffuseLight: [
+          scene.lights[0].diffuse[0] + closestLantern.diffuse[0] * attenuation,
+          scene.lights[0].diffuse[1] + closestLantern.diffuse[1] * attenuation,
+          scene.lights[0].diffuse[2] + closestLantern.diffuse[2] * attenuation,
+          1.0
+        ],
+        u_specularLight: [
+          scene.lights[0].specular[0] + closestLantern.specular[0] * attenuation,
+          scene.lights[0].specular[1] + closestLantern.specular[1] * attenuation,
+          scene.lights[0].specular[2] + closestLantern.specular[2] * attenuation,
+          1.0
+        ],
+      }
+      twgl.setUniforms(phongProgramInfo, combinedUniforms);
+    } else {
+      // No hay linterna cerca: usar solo luz global
+      let globalUniforms = {
+        u_viewWorldPosition: scene.camera.posArray,
+        u_lightWorldPosition: scene.lights[0].posArray,
+        u_ambientLight: scene.lights[0].ambient,
+        u_diffuseLight: scene.lights[0].diffuse,
+        u_specularLight: scene.lights[0].specular,
+      }
+      twgl.setUniforms(phongProgramInfo, globalUniforms);
+    }
+    
     drawObject(gl, phongProgramInfo, object, viewProjectionMatrix, fract);
   }
 

@@ -20,8 +20,8 @@ const destinations = [];
 // Define the data object
 const initData = {
     NAgents: 20,
-    width: 28,
-    height: 28
+    width: 36,
+    height: 35
 };
 
 /*

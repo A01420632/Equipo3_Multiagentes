@@ -9,8 +9,8 @@ from randomAgents.agent import Car, Traffic_Light, Obstacle, Destination, Road
 
 # Size of the board:
 number_agents = 10
-width = 28
-height = 28
+width = 36
+height = 35
 cityModel = None
 currentStep = 0
 

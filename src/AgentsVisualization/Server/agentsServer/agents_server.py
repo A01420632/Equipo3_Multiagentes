@@ -124,13 +124,9 @@ def getObstacles():
 
     if request.method == 'GET':
         try:
-            # Get the positions of the obstacles and return them to WebGL in JSON.json.t.
-            # Same as before, the positions are sent as a list of dictionaries, where each dictionary has the id and position of an obstacle.
-
             obstacleCells = cityModel.grid.all_cells.select(
                 lambda cell: any(isinstance(obj, Obstacle) for obj in cell.agents)
             )
-            # print(f"CELLS: {agentCells}")
 
             agents = [
                 (cell.coordinate, agent)
@@ -138,18 +134,57 @@ def getObstacles():
                 for agent in cell.agents
                 if isinstance(agent, Obstacle)
             ]
-            # print(f"AGENTS: {agents}")
 
-            obstaclePositions = [
-                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
-                for (coordinate, a) in agents
-            ]
-            # print(f"OBSTACLE POSITIONS: {obstaclePositions}")
+            obstaclePositions = []
+            for (coordinate, a) in agents:
+                x, z = coordinate
+                rotation = getHouseRotation(cityModel, x, z)
+                is_tree_value = getattr(a, 'is_tree', False)
+                
+                obstaclePositions.append({
+                    "id": str(a.unique_id), 
+                    "x": x, 
+                    "y": 1, 
+                    "z": z,
+                    "rotation": rotation,
+                    "is_tree": is_tree_value
+                })
 
             return jsonify({'positions': obstaclePositions})
         except Exception as e:
             print(e)
             return jsonify({"message": "Error with obstacle positions"}), 500
+
+def getHouseRotation(model, house_x, house_z):
+    """
+    Determina la rotación de una casa para que mire hacia la calle más cercana.
+    Prioridad: Norte/Sur > Este/Oeste (para esquinas)
+    Retorna el ángulo en grados (0, 90, 180, 270).
+    """
+    # Verificar las 4 direcciones cardinales
+    # ORDEN DE PRIORIDAD: Sur, Norte, Este, Oeste
+    # Formato: (dx, dz, ángulo_en_grados, nombre_dirección)
+    directions = [
+        (0, -1, 0, "Sur"),      # Calle abajo → casa mira Sur (0°)
+        (0, 1, 180, "Norte"),   # Calle arriba → casa mira Norte (180°)
+        (1, 0, 270, "Este"),    # Calle derecha → casa mira Este (270° invertido)
+        (-1, 0, 90, "Oeste"),   # Calle izquierda → casa mira Oeste (90° invertido)
+    ]
+    
+    for dx, dz, angle, direction in directions:
+        check_x = house_x + dx
+        check_z = house_z + dz
+        
+        # Verificar límites
+        if 0 <= check_x < model.grid.width and 0 <= check_z < model.grid.height:
+            cell = model.grid[(check_x, check_z)]
+            
+            # Si encontramos una calle REAL (no decorativa) en esta dirección, la casa debe mirar hacia allá
+            if any(isinstance(obj, Road) and not getattr(obj, 'is_decorative_road', False) for obj in cell.agents):
+                return angle
+    
+    # Si no hay calles alrededor, retornar 0° por defecto
+    return 0
 
 # This route will be used to get the positions of the destinations
 @app.route('/getDestination', methods=['GET'])
@@ -170,10 +205,19 @@ def getDestinations():
                 if isinstance(agent, Destination)
             ]
 
-            destinationPositions = [
-                {"id": str(a.unique_id), "x": coordinate[0], "y":1, "z":coordinate[1]}
-                for (coordinate, a) in agents
-            ]
+            destinationPositions = []
+            for (coordinate, a) in agents:
+                x, z = coordinate
+                rotation = getHouseRotation(cityModel, x, z)
+                # Agregar 180° para compensar orientación del modelo Barrack
+                rotation = (rotation + 180) % 360
+                destinationPositions.append({
+                    "id": str(a.unique_id),
+                    "x": x,
+                    "y": 1,
+                    "z": z,
+                    "rotation": rotation
+                })
 
             return jsonify({'positions': destinationPositions})
         except Exception as e:

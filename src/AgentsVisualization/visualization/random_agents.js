@@ -60,6 +60,7 @@ let buildingObjData = null;
 let trafficLightObjData = null;
 let roadObjData = null;
 let destinationObjData = null;
+let treeObjData = null;
 
 // Variables para animación del caballo
 let horseAnimationFrames = []; // Array con los 4 frames de animación
@@ -73,6 +74,7 @@ let trafficLightMaterials = null;
 let trafficLightMaterialsG = null;
 let roadMaterials = null;
 let destinationMaterials = null;
+let treeMaterials = null;
 
 let angulobase = Math.PI;//-Math.PI / 2;
 const DIRECTION_ANGLES = {
@@ -158,19 +160,22 @@ async function main() {
   const trafficLightData = await loadObjFile('../assets/models/Lantern.obj'); //Semaforo -> Tambien cambiar escala
   const trafficLightDataGreen = await loadObjFile('../assets/models/LanternOn.obj'); //SemaforoVerde
   const roadData = await loadObjFile('../assets/models/Road.obj');
-  const destinationData = await loadObjFile('../assets/models/Stable.obj');
+  const destinationData = await loadObjFile('../assets/models/Barrack.obj');
+  const treeData = await loadObjFile('../assets/models/Tree.obj');
   
   // Extract OBJ data and materials
   buildingObjData = buildingData ? buildingData.objData : null;
   trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
   roadObjData = roadData ? roadData.objData : null;
   destinationObjData = destinationData ? destinationData.objData : null;
+  treeObjData = treeData ? treeData.objData : null;
   
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
   trafficLightMaterialsG = trafficLightDataGreen ? trafficLightDataGreen.materials : null;
   roadMaterials = roadData ? roadData.materials : null;
   destinationMaterials = destinationData ? destinationData.materials : null;
+  treeMaterials = treeData ? treeData.materials : null;
   
   console.log('OBJ models and materials loaded');
 
@@ -325,6 +330,8 @@ function setupObjects(scene, gl, programInfo) {
     baseRoad.prepareVAO(gl, programInfo);
     console.log('Using default cube for roads');
   }
+
+  // Create destination model from OBJ
   const baseDestination = new Object3D(-7, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (destinationObjData) {
     baseDestination.prepareVAO(gl, programInfo, destinationObjData, destinationMaterials);
@@ -332,6 +339,16 @@ function setupObjects(scene, gl, programInfo) {
   } else {
     baseDestination.prepareVAO(gl, programInfo);
     console.log('Using default cube for destinations');
+  }
+
+  // Create tree model from OBJ
+  const baseTree = new Object3D(-8, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  if (treeObjData) {
+    baseTree.prepareVAO(gl, programInfo, treeObjData, treeMaterials);
+    console.log('Tree model loaded successfully');
+  } else {
+    baseTree.prepareVAO(gl, programInfo);
+    console.log('Using default cube for trees');
   }
 
   // Store the base models for later use
@@ -343,6 +360,7 @@ function setupObjects(scene, gl, programInfo) {
   scene.baseTrafficLightGreen = baseTrafficLightGreen;
   scene.baseRoad = baseRoad;
   scene.baseDestination = baseDestination;
+  scene.baseTree = baseTree;
 
   // Setup horses with IDLE model
   for (const agent of agents) {
@@ -373,12 +391,37 @@ function setupObjects(scene, gl, programInfo) {
 
   // Setup obstacles (buildings) with building model
   for (const agent of obstacles) {
-    agent.arrays = baseBuilding.arrays;
-    agent.bufferInfo = baseBuilding.bufferInfo;
-    agent.vao = baseBuilding.vao;
-    agent.scale = { x: 0.2, y: 0.4, z: 0.2 }; //{ x: 0.03, y: 0.05, z: 0.03 }
-    agent.color = [0.7, 0.7, 0.7, 1.0];
-    agent.position.y += 0.3; // Elevar edificios sobre las calles
+    // Decidir si es árbol o edificio
+    if (agent.is_tree) {
+      agent.arrays = baseTree.arrays;
+      agent.bufferInfo = baseTree.bufferInfo;
+      agent.vao = baseTree.vao;
+      agent.scale = { x: 0.2, y: 0.4, z: 0.2 };
+      
+      // Color verde para árboles
+      if (treeMaterials && Object.keys(treeMaterials).length > 0) {
+        const firstMaterial = Object.values(treeMaterials)[0];
+        agent.color = firstMaterial?.Kd ? [...firstMaterial.Kd, 1.0] : [0.15, 0.50, 0.15, 1.0];
+      } else {
+        agent.color = [0.15, 0.50, 0.15, 1.0];
+      }
+    } else {
+      agent.arrays = baseBuilding.arrays;
+      agent.bufferInfo = baseBuilding.bufferInfo;
+      agent.vao = baseBuilding.vao;
+      
+      // Escala aleatoria en Y para edificios de diferentes alturas
+      const randomHeight = 0.2 + Math.random() * 0.2; // Entre 0.2 y 0.4
+      agent.scale = { x: 0.2, y: randomHeight, z: 0.2 };
+      agent.color = [0.7, 0.7, 0.7, 1.0];
+      
+      // Aplicar rotación solo a edificios (no a árboles)
+      if (agent.serverRotation !== undefined) {
+        agent.rotY = (agent.serverRotation * Math.PI) / 180;
+      }
+    }
+    
+    agent.position.y += 0.3; // Elevar sobre las calles
     scene.addObject(agent);
   }
 
@@ -423,7 +466,7 @@ function setupObjects(scene, gl, programInfo) {
     dest.arrays = baseDestination.arrays;
     dest.bufferInfo = baseDestination.bufferInfo;
     dest.vao = baseDestination.vao;
-    dest.scale = { x: 0.05, y: 0.1, z: 0.05 };
+    dest.scale = { x: 0.01, y: 0.02, z: 0.01 };
     
     // Apply color from MTL if available
     if (destinationMaterials && Object.keys(destinationMaterials).length > 0) {
@@ -435,6 +478,11 @@ function setupObjects(scene, gl, programInfo) {
       }
     } else {
       dest.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+    }
+    
+    // Aplicar rotación si está disponible (convertir grados a radianes)
+    if (dest.serverRotation !== undefined) {
+      dest.rotY = (dest.serverRotation * Math.PI) / 180;
     }
     
     scene.addObject(dest);
@@ -537,11 +585,13 @@ function updateSceneObjects() {
   const obstacleIds = new Set(obstacles.map(obs => obs.id));
   const trafficLightIds = new Set(trafficLights.map(light => light.id));
   const roadIds = new Set(roads.map(road => road.id));
+  const destinationIds = new Set(destinations.map(dest => dest.id));
   
   scene.objects = scene.objects.filter(obj => {
     if (obstacleIds.has(obj.id)) return true;
     if (trafficLightIds.has(obj.id)) return true;
     if (roadIds.has(obj.id)) return true;
+    if (destinationIds.has(obj.id)) return true;
     if (obj.id < 0) return true;
     return currentAgentIds.has(obj.id);
   });

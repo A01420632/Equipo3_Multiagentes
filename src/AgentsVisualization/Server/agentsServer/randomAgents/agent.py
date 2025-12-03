@@ -500,15 +500,17 @@ class Destination(FixedAgent):
 
 
 class Obstacle(FixedAgent):
-    def __init__(self, model, cell, unique_id):
+    def __init__(self, model, cell, unique_id, is_tree=False):
         super().__init__(model)
         self.cell = cell
         self.unique_id = unique_id
+        self.is_tree = is_tree
 
 
 class Road(FixedAgent):
-    def __init__(self, model, cell, unique_id, direction="Left"):
+    def __init__(self, model, cell, unique_id, direction="Left", is_decorative_road=False):
         super().__init__(model)
         self.cell = cell
         self.unique_id = unique_id
         self.direction = direction
+        self.is_decorative_road = is_decorative_road

@@ -158,6 +158,8 @@ async function getObstacles() {
 
             for (const obstacle of result.positions) {
                 const newObstacle = new Object3D(obstacle.id, [obstacle.x, obstacle.y, obstacle.z]);
+                newObstacle.serverRotation = obstacle.rotation || 0;
+                newObstacle.is_tree = obstacle.is_tree || false;
                 obstacles.push(newObstacle);
             }
             
@@ -179,6 +181,7 @@ async function getDestination() {
 
             for (const destination of result.positions) {
                 const newDestination = new Object3D(destination.id, [destination.x, destination.y, destination.z]);
+                newDestination.serverRotation = destination.rotation || 0;
                 destinations.push(newDestination);
             }
         }

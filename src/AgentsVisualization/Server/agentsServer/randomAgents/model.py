@@ -82,7 +82,9 @@ class CityModel(Model):
                     cell = self.grid[cell_pos]
                     
                     if col in ["v", "^", ">", "<"]:
-                        agent = Road(self, cell, self.get_unique_id(), dataDictionary[col])
+                        agent = Road(self, cell, self.get_unique_id(), dataDictionary[col], is_decorative_road=False)
+                    elif col == "R":
+                        agent = Road(self, cell, self.get_unique_id(), "Left", is_decorative_road=True)
                     elif col in ["S", "s"]:
                         agent = Traffic_Light(
                             self,
@@ -93,8 +95,11 @@ class CityModel(Model):
                         )
                         self.traffic_lights.append(agent)
                     elif col == "#":
-                        agent = Obstacle(self, cell, self.get_unique_id())
+                        agent = Obstacle(self, cell, self.get_unique_id(), is_tree=False)
+                    elif col == "T":
+                        agent = Obstacle(self, cell, self.get_unique_id(), is_tree=True)
                     elif col == "D":
+                        agent = Destination(self, cell, self.get_unique_id())
                         agent = Destination(self, cell, self.get_unique_id())
                         self.destinations.append(agent) 
         

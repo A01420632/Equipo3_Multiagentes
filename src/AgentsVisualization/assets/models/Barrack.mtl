@@ -1,0 +1,202 @@
+# Barrack MTL - Optimizado para WebGL
+# Colores basados en materiales de madera y piedra medievales
+
+newmtl 01___Default
+	Ns 25.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.15 0.10
+	Kd 0.45 0.30 0.20
+	Ks 0.05 0.05 0.05
+	Ke 0.0 0.0 0.0
+
+newmtl Material__236
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl Material__237
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl 07___Default
+	Ns 30.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.30 0.20 0.12
+	Kd 0.55 0.38 0.25
+	Ks 0.08 0.08 0.08
+	Ke 0.0 0.0 0.0
+
+newmtl Material__239
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl 10___Default
+	Ns 15.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.35 0.32 0.28
+	Kd 0.65 0.60 0.55
+	Ks 0.03 0.03 0.03
+	Ke 0.0 0.0 0.0
+
+newmtl 13___Default
+	Ns 15.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.40 0.40 0.38
+	Kd 0.75 0.75 0.70
+	Ks 0.05 0.05 0.05
+	Ke 0.0 0.0 0.0
+
+newmtl 05___Default
+	Ns 10.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.05 0.05 0.05
+	Kd 0.15 0.15 0.15
+	Ks 0.0 0.0 0.0
+	Ke 0.0 0.0 0.0
+
+newmtl 03___Default
+	Ns 28.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.22 0.18 0.15
+	Kd 0.42 0.35 0.28
+	Ks 0.06 0.06 0.06
+	Ke 0.0 0.0 0.0
+
+newmtl Material__122
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl Material__123
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl 08___Default
+	Ns 32.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.28 0.22 0.16
+	Kd 0.52 0.40 0.30
+	Ks 0.10 0.10 0.10
+	Ke 0.0 0.0 0.0
+
+newmtl 04___Default
+	Ns 26.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.26 0.18 0.12
+	Kd 0.48 0.35 0.24
+	Ks 0.07 0.07 0.07
+	Ke 0.0 0.0 0.0
+
+newmtl Material__33
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl Material__37
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl Material__38
+	Ns 20.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.25 0.25 0.25
+	Kd 0.50 0.50 0.50
+	Ks 0.02 0.02 0.02
+	Ke 0.0 0.0 0.0
+
+newmtl 02___Default
+	Ns 12.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.38 0.36 0.34
+	Kd 0.70 0.68 0.65
+	Ks 0.04 0.04 0.04
+	Ke 0.0 0.0 0.0
+
+newmtl 15___Default
+	Ns 45.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.15 0.15 0.15
+	Kd 0.30 0.30 0.30
+	Ks 0.20 0.20 0.20
+	Ke 0.0 0.0 0.0
+
+newmtl 14___Default
+	Ns 10.0000
+	Ni 1.5000
+	d 0.27
+	illum 2
+	Ka 0.35 0.35 0.20
+	Kd 0.65 0.65 0.40
+	Ks 0.0 0.0 0.0
+	Ke 0.0 0.0 0.0
+
+newmtl 09___Default
+	Ns 40.0000
+	Ni 1.5000
+	d 1.0000
+	illum 2
+	Ka 0.12 0.12 0.12
+	Kd 0.25 0.25 0.25
+	Ks 0.18 0.18 0.18
+	Ke 0.0 0.0 0.0

@@ -1,10 +1,10 @@
-# Blender 5.0.0 MTL File: 'Horse.blend'
+# Blender MTL File - Caballo Negro
 # www.blender.org
 
 newmtl Material.003
 Ns 250.000000
 Ka 1.000000 1.000000 1.000000
-Kd 0.174647 0.074214 0.046665
+Kd 0.1 0.1 0.1
 Ks 0.500000 0.500000 0.500000
 Ke 0.000000 0.000000 0.000000
 Ni 1.500000

@@ -65,7 +65,9 @@ let treeObjData = null;
 // Variables para animación del caballo
 let horseAnimationFrames = []; // Array con los 4 frames de animación
 let horseIdleObjData = null;   // Frame IDLE
-let horseMaterials = null;     // Materiales compartidos
+let horseMaterialsBrown = null;  // Materiales café
+let horseMaterialsWhite = null;  // Materiales blanco
+let horseMaterialsBlack = null;  // Materiales negro
 
 // Global variables for MTL materials
 let carMaterials = null;
@@ -138,23 +140,38 @@ async function main() {
   // Load OBJ models from assets folder
   console.log('Loading OBJ models...');
   
-  // Cargar frames de animación del caballo
-  const horse1Data = await loadObjFile('../assets/models/Horse1.obj');
-  const horse2Data = await loadObjFile('../assets/models/Horse2.obj');
-  const horse3Data = await loadObjFile('../assets/models/Horse3.obj');
-  const horse4Data = await loadObjFile('../assets/models/Horse4.obj');
-  const horseIdleData = await loadObjFile('../assets/models/HorseIdle.obj');
+  // Cargar frames de animación del caballo y los 3 MTL
+  const loadHorseFrame = async (url) => {
+    const response = await fetch(url);
+    return response.ok ? await response.text() : null;
+  };
   
-  // Guardar los frames de animación
+  // Cargar MTL para cada color
+  const loadHorseMtl = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const mtlText = await response.text();
+        return loadMtl(mtlText);
+      }
+    } catch (error) {
+      console.error(`Error loading horse MTL from ${url}:`, error);
+    }
+    return null;
+  };
+  
+  horseMaterialsBrown = await loadHorseMtl('../assets/models/Horse_Brown.mtl');
+  horseMaterialsWhite = await loadHorseMtl('../assets/models/Horse_White.mtl');
+  horseMaterialsBlack = await loadHorseMtl('../assets/models/Horse_Black.mtl');
+  
   horseAnimationFrames = [
-    horse1Data ? horse1Data.objData : null,
-    horse2Data ? horse2Data.objData : null,
-    horse3Data ? horse3Data.objData : null,
-    horse4Data ? horse4Data.objData : null
+    await loadHorseFrame('../assets/models/Horse1.obj'),
+    await loadHorseFrame('../assets/models/Horse2.obj'),
+    await loadHorseFrame('../assets/models/Horse3.obj'),
+    await loadHorseFrame('../assets/models/Horse4.obj')
   ];
   
-  horseIdleObjData = horseIdleData ? horseIdleData.objData : null;
-  horseMaterials = horse1Data ? horse1Data.materials : null;
+  horseIdleObjData = await loadHorseFrame('../assets/models/HorseIdle.obj');
   
   const buildingData = await loadObjFile('../assets/models/House.obj');
   const trafficLightData = await loadObjFile('../assets/models/Lantern.obj'); //Semaforo -> Tambien cambiar escala
@@ -248,18 +265,11 @@ function angleDifference(from, to) {
   return diff;
 }
 
-function getRandomCarColor() {
+function getRandomHorseColor() {
   const colors = [
-    [1.0, 0.0, 0.0, 1.0],  // Rojo
-    [0.0, 0.0, 1.0],  // Azul
-    [1.0, 1.0, 0.0],  // Amarillo
-    [0.0, 1.0, 0.0],  // Verde
-    [1.0, 0.5, 0.0],  // Naranja
-    [0.5, 0.0, 0.5],  // Púrpura
-    [0.0, 1.0, 1.0],  // Cian
-    [1.0, 1.0, 1.0],  // Blanco
-    [0.2, 0.2, 0.2],  // Negro
-    [0.7, 0.7, 0.7],  // Gris
+    [0.174647, 0.074214, 0.046665, 1.0],  // Café (color original del MTL)
+    [0.95, 0.95, 0.95, 1.0],  // Blanco
+    [0.1, 0.1, 0.1, 1.0],  // Negro
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 }
@@ -269,26 +279,53 @@ function setupObjects(scene, gl, programInfo) {
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
-  // Create horse animation frames
-  const baseHorseFrames = [];
+  // Create horse animation frames para cada color
+  const baseHorseFramesBrown = [];
+  const baseHorseFramesWhite = [];
+  const baseHorseFramesBlack = [];
+  
   for (let i = 0; i < horseAnimationFrames.length; i++) {
-    const horseFrame = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    // Frames café
+    const horseFrameBrown = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
     if (horseAnimationFrames[i]) {
-      horseFrame.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterials);
-      // console.log(`Horse animation frame ${i + 1} loaded successfully`);
+      horseFrameBrown.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterialsBrown);
     } else {
-      horseFrame.prepareVAO(gl, programInfo);
+      horseFrameBrown.prepareVAO(gl, programInfo);
     }
-    baseHorseFrames.push(horseFrame);
+    baseHorseFramesBrown.push(horseFrameBrown);
+    
+    // Frames blanco
+    const horseFrameWhite = new Object3D(-200 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    if (horseAnimationFrames[i]) {
+      horseFrameWhite.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterialsWhite);
+    } else {
+      horseFrameWhite.prepareVAO(gl, programInfo);
+    }
+    baseHorseFramesWhite.push(horseFrameWhite);
+    
+    // Frames negro
+    const horseFrameBlack = new Object3D(-300 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    if (horseAnimationFrames[i]) {
+      horseFrameBlack.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterialsBlack);
+    } else {
+      horseFrameBlack.prepareVAO(gl, programInfo);
+    }
+    baseHorseFramesBlack.push(horseFrameBlack);
   }
   
-  // Create horse IDLE frame
-  const baseHorseIdle = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  // Create horse IDLE frames para cada color
+  const baseHorseIdleBrown = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  const baseHorseIdleWhite = new Object3D(-210, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  const baseHorseIdleBlack = new Object3D(-310, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  
   if (horseIdleObjData) {
-    baseHorseIdle.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterials);
-    // console.log('Horse IDLE model loaded successfully');
+    baseHorseIdleBrown.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterialsBrown);
+    baseHorseIdleWhite.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterialsWhite);
+    baseHorseIdleBlack.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterialsBlack);
   } else {
-    baseHorseIdle.prepareVAO(gl, programInfo);
+    baseHorseIdleBrown.prepareVAO(gl, programInfo);
+    baseHorseIdleWhite.prepareVAO(gl, programInfo);
+    baseHorseIdleBlack.prepareVAO(gl, programInfo);
   }
 
   // Create building model from OBJ (invertir caras)
@@ -353,8 +390,12 @@ function setupObjects(scene, gl, programInfo) {
 
   // Store the base models for later use
   scene.baseCube = baseCube;
-  scene.baseHorseFrames = baseHorseFrames;
-  scene.baseHorseIdle = baseHorseIdle;
+  scene.baseHorseFramesBrown = baseHorseFramesBrown;
+  scene.baseHorseFramesWhite = baseHorseFramesWhite;
+  scene.baseHorseFramesBlack = baseHorseFramesBlack;
+  scene.baseHorseIdleBrown = baseHorseIdleBrown;
+  scene.baseHorseIdleWhite = baseHorseIdleWhite;
+  scene.baseHorseIdleBlack = baseHorseIdleBlack;
   scene.baseBuilding = baseBuilding;
   scene.baseTrafficLight = baseTrafficLight;
   scene.baseTrafficLightGreen = baseTrafficLightGreen;
@@ -364,13 +405,24 @@ function setupObjects(scene, gl, programInfo) {
 
   // Setup horses with IDLE model
   for (const agent of agents) {
-    // Inicializar con frame IDLE
-    agent.arrays = baseHorseIdle.arrays;
-    agent.bufferInfo = baseHorseIdle.bufferInfo;
-    agent.vao = baseHorseIdle.vao;
-    agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
+    // Asignar color aleatorio (0=café, 1=blanco, 2=negro)
+    agent.horseColorType = Math.floor(Math.random() * 3);
     
-    agent.color = getRandomCarColor();
+    // Seleccionar el modelo IDLE según el color
+    let idleModel;
+    if (agent.horseColorType === 0) {
+      idleModel = baseHorseIdleBrown;
+    } else if (agent.horseColorType === 1) {
+      idleModel = baseHorseIdleWhite;
+    } else {
+      idleModel = baseHorseIdleBlack;
+    }
+    
+    // Inicializar con frame IDLE del color correspondiente
+    agent.arrays = idleModel.arrays;
+    agent.bufferInfo = idleModel.bufferInfo;
+    agent.vao = idleModel.vao;
+    agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
     
     const initialDirection = agent.dirActual || "Down";
     agent.currentDirection = initialDirection;
@@ -650,9 +702,18 @@ function updateSceneObjects() {
         existingObj.animationStartTime = Date.now();
       } else if (!isMoving && existingObj.isMoving) {
         existingObj.isMoving = false;
-        existingObj.arrays = scene.baseHorseIdle.arrays;
-        existingObj.bufferInfo = scene.baseHorseIdle.bufferInfo;
-        existingObj.vao = scene.baseHorseIdle.vao;
+        // Usar el modelo IDLE del color correspondiente
+        let idleModel;
+        if (existingObj.horseColorType === 0) {
+          idleModel = scene.baseHorseIdleBrown;
+        } else if (existingObj.horseColorType === 1) {
+          idleModel = scene.baseHorseIdleWhite;
+        } else {
+          idleModel = scene.baseHorseIdleBlack;
+        }
+        existingObj.arrays = idleModel.arrays;
+        existingObj.bufferInfo = idleModel.bufferInfo;
+        existingObj.vao = idleModel.vao;
       }
       
       if (existingObj.isMoving) {
@@ -662,7 +723,16 @@ function updateSceneObjects() {
         
         if (frameIndex !== existingObj.currentFrame) {
           existingObj.currentFrame = frameIndex;
-          const horseFrame = scene.baseHorseFrames[frameIndex];
+          // Usar los frames del color correspondiente
+          let horseFrames;
+          if (existingObj.horseColorType === 0) {
+            horseFrames = scene.baseHorseFramesBrown;
+          } else if (existingObj.horseColorType === 1) {
+            horseFrames = scene.baseHorseFramesWhite;
+          } else {
+            horseFrames = scene.baseHorseFramesBlack;
+          }
+          const horseFrame = horseFrames[frameIndex];
           existingObj.arrays = horseFrame.arrays;
           existingObj.bufferInfo = horseFrame.bufferInfo;
           existingObj.vao = horseFrame.vao;
@@ -718,12 +788,22 @@ function updateSceneObjects() {
       }
     } else {
       // Nuevo agente
-      agent.arrays = scene.baseHorseIdle.arrays;
-      agent.bufferInfo = scene.baseHorseIdle.bufferInfo;
-      agent.vao = scene.baseHorseIdle.vao;
-      agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
+      agent.horseColorType = Math.floor(Math.random() * 3);
       
-      agent.color = getRandomCarColor();
+      // Seleccionar modelo IDLE según color
+      let idleModel;
+      if (agent.horseColorType === 0) {
+        idleModel = scene.baseHorseIdleBrown;
+      } else if (agent.horseColorType === 1) {
+        idleModel = scene.baseHorseIdleWhite;
+      } else {
+        idleModel = scene.baseHorseIdleBlack;
+      }
+      
+      agent.arrays = idleModel.arrays;
+      agent.bufferInfo = idleModel.bufferInfo;
+      agent.vao = idleModel.vao;
+      agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
       
       const initialDirection = agent.dirActual || "Down";
       agent.currentDirection = initialDirection;

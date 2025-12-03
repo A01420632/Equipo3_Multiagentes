@@ -347,6 +347,7 @@ function setupObjects(scene, gl, programInfo) {
     agent.oldRotY = initialAngle;
     agent.rotY = initialAngle;
     agent.oldPosArray = [...agent.posArray];
+    agent.oldPosArray[1] += 0.3;
     
     // Variables para animación
     agent.currentFrame = 0;
@@ -548,7 +549,7 @@ function updateSceneObjects() {
 
       // Actualizar posición
       const oldPos = [...currentInterpolatedPos];
-      const newPos = [agent.position.x, agent.position.y, agent.position.z];
+      const newPos = [agent.position.x, agent.position.y + 0.3, agent.position.z]; // Elevar nueva posición
       
       existingObj.oldPosArray = currentInterpolatedPos;
       existingObj.nextPosArray = newPos;
@@ -629,6 +630,7 @@ function updateSceneObjects() {
       agent.oldRotY = initialAngle;
       agent.rotY = initialAngle;
       agent.oldPosArray = [...agent.posArray];
+      agent.oldPosArray[1] += 0.3;
       
       agent.currentFrame = 0;
       agent.isMoving = false;

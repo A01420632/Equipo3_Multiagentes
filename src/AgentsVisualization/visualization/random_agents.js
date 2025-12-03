@@ -270,7 +270,7 @@ function setupObjects(scene, gl, programInfo) {
     const horseFrame = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
     if (horseAnimationFrames[i]) {
       horseFrame.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterials);
-      console.log(`Horse animation frame ${i + 1} loaded successfully`);
+      // console.log(`Horse animation frame ${i + 1} loaded successfully`);
     } else {
       horseFrame.prepareVAO(gl, programInfo);
     }
@@ -281,7 +281,7 @@ function setupObjects(scene, gl, programInfo) {
   const baseHorseIdle = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
   if (horseIdleObjData) {
     baseHorseIdle.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterials);
-    console.log('Horse IDLE model loaded successfully');
+    // console.log('Horse IDLE model loaded successfully');
   } else {
     baseHorseIdle.prepareVAO(gl, programInfo);
   }
@@ -568,8 +568,7 @@ function updateSceneObjects() {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
     if (existingObj) {
-      // Calcular posición interpolada actual
-      let currentInterpolatedPos = existingObj.posArray;
+      let currentInterpolatedPos;
       if (existingObj.oldPosArray && existingObj.nextPosArray && existingObj.interpolateStart) {
         const elapsedLocal = Date.now() - existingObj.interpolateStart;
         const t = clamp(elapsedLocal / duration, 0, 1);
@@ -580,38 +579,34 @@ function updateSceneObjects() {
         ];
       } else {
         currentInterpolatedPos = [...existingObj.posArray];
+        currentInterpolatedPos[1] += 0.3;
       }
 
-      // Actualizar posición
-      const oldPos = [...currentInterpolatedPos];
-      const newPos = [agent.position.x, agent.position.y + 0.3, agent.position.z]; // Elevar nueva posición
+      const newPos = [agent.position.x, agent.position.y + 0.3, agent.position.z];
       
-      existingObj.oldPosArray = currentInterpolatedPos;
+      existingObj.oldPosArray = currentInterpolatedPos; 
       existingObj.nextPosArray = newPos;
       existingObj.interpolateStart = Date.now();
+      
       existingObj.position.x = agent.position.x;
       existingObj.position.y = agent.position.y;
       existingObj.position.z = agent.position.z;
       
-      // Determinar si está en movimiento
-      const isMoving = Math.abs(oldPos[0] - newPos[0]) > 0.01 || Math.abs(oldPos[2] - newPos[2]) > 0.01;
+      const isMoving = Math.abs(currentInterpolatedPos[0] - newPos[0]) > 0.01 || 
+                       Math.abs(currentInterpolatedPos[2] - newPos[2]) > 0.01;
       
-      // Actualizar VAO según si está en movimiento o idle
       if (isMoving && !existingObj.isMoving) {
-        // Cambió de idle a movimiento
         existingObj.isMoving = true;
         existingObj.animationStartTime = Date.now();
       } else if (!isMoving && existingObj.isMoving) {
-        // Cambió de movimiento a idle
         existingObj.isMoving = false;
         existingObj.arrays = scene.baseHorseIdle.arrays;
         existingObj.bufferInfo = scene.baseHorseIdle.bufferInfo;
         existingObj.vao = scene.baseHorseIdle.vao;
       }
       
-      // Si está en movimiento, actualizar frame de animación
       if (existingObj.isMoving) {
-        const animSpeed = 120; // ms por frame (ajusta para velocidad de animación)
+        const animSpeed = 120;
         const elapsed = Date.now() - (existingObj.animationStartTime || Date.now());
         const frameIndex = Math.floor(elapsed / animSpeed) % 4;
         
@@ -624,33 +619,55 @@ function updateSceneObjects() {
         }
       }
 
-      const nextDirection = agent.nextDir || agent.dirActual || "Down";
+      // ✅ ROTACIÓN CORREGIDA: usar dirActual como fuente de verdad
+      const nextDirection = agent.dirActual || "Down"; // ✅ Usar dirActual, no nextDir
+      
       if (existingObj.currentDirection !== nextDirection) {
         const newAngle = directionToAngle(nextDirection);
-        const currentAngle = existingObj.rotY !== undefined ? existingObj.rotY : newAngle;
         
-        // Normalizar ángulos antes de calcular diferencia
+        // ✅ Obtener ángulo actual (interpolado si está rotando)
+        let currentAngle;
+        if (existingObj.oldRotY !== undefined && existingObj.rotateStart) {
+          const rotElapsed = Date.now() - existingObj.rotateStart;
+          const rotDuration = duration * 0.5;
+          const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
+          
+          if (rotFract < 1.0) {
+            // ✅ Aún está interpolando, usar ángulo interpolado
+            currentAngle = lerp(existingObj.oldRotY, existingObj.rotY, rotFract);
+          } else {
+            // ✅ Terminó de interpolar, usar ángulo final
+            currentAngle = existingObj.rotY;
+          }
+        } else {
+          // ✅ No hay interpolación activa, usar ángulo actual
+          currentAngle = existingObj.rotY !== undefined ? existingObj.rotY : existingObj.rotRad.y;
+        }
+        
         const normalizeAngle = (angle) => {
           while (angle > Math.PI) angle -= 2 * Math.PI;
           while (angle < -Math.PI) angle += 2 * Math.PI;
           return angle;
         };
         
-        const normalizedCurrent = normalizeAngle(currentAngle);
+        currentAngle = normalizeAngle(currentAngle);
         const normalizedNew = normalizeAngle(newAngle);
         
-        // Calcular diferencia tomando el camino más corto
-        let diff = normalizedNew - normalizedCurrent;
+        // ✅ Calcular camino más corto
+        let diff = normalizedNew - currentAngle;
         if (diff > Math.PI) diff -= 2 * Math.PI;
         if (diff < -Math.PI) diff += 2 * Math.PI;
         
-        // Establecer rotación tomando en cuenta el camino más corto
-        existingObj.oldRotY = normalizedCurrent;
-        existingObj.rotY = normalizedCurrent + diff;
-        existingObj.currentDirection = nextDirection;
-        existingObj.rotateStart = Date.now();
+        // ✅ Solo iniciar nueva rotación si el cambio es significativo
+        if (Math.abs(diff) > 0.01) { // Umbral de 0.01 radianes (~0.57°)
+          existingObj.oldRotY = currentAngle;
+          existingObj.rotY = currentAngle + diff;
+          existingObj.currentDirection = nextDirection;
+          existingObj.rotateStart = Date.now();
+        }
       }
     } else {
+      // Nuevo agente
       agent.arrays = scene.baseHorseIdle.arrays;
       agent.bufferInfo = scene.baseHorseIdle.bufferInfo;
       agent.vao = scene.baseHorseIdle.vao;
@@ -658,14 +675,18 @@ function updateSceneObjects() {
       
       agent.color = getRandomCarColor();
       
-      const initialDirection = agent.nextDir || agent.dirActual || "Down";
+      const initialDirection = agent.dirActual || "Down";
       agent.currentDirection = initialDirection;
       const initialAngle = directionToAngle(initialDirection);
       
+      agent.rotRad = { x: 0, y: initialAngle, z: 0 };
       agent.oldRotY = initialAngle;
       agent.rotY = initialAngle;
-      agent.oldPosArray = [...agent.posArray];
-      agent.oldPosArray[1] += 0.3;
+      
+      const initialPos = [agent.position.x, agent.position.y + 0.3, agent.position.z];
+      agent.oldPosArray = initialPos;
+      agent.nextPosArray = initialPos;
+      agent.interpolateStart = Date.now();
       
       agent.currentFrame = 0;
       agent.isMoving = false;
@@ -677,14 +698,13 @@ function updateSceneObjects() {
 }
 
 function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) {
-  // Calcular fract local
   let localFract = globalFract;
   if (object.interpolateStart) {
     const elapsedLocal = Date.now() - object.interpolateStart;
     localFract = clamp(elapsedLocal / duration, 0, 1);
   }
 
-  // Interpolar posición
+  // Interpolar posición base
   let v3_tra;
   if (object.oldPosArray && object.nextPosArray && localFract < 1.0) {
     v3_tra = [
@@ -692,6 +712,12 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
       lerp(object.oldPosArray[1], object.nextPosArray[1], localFract),
       lerp(object.oldPosArray[2], object.nextPosArray[2], localFract)
     ];
+    
+    if (object.isMoving) {
+      const jumpHeight = 0.1;
+      const verticalOffset = Math.sin(Math.PI * localFract) * jumpHeight;
+      v3_tra[1] += verticalOffset;
+    }
   } else if (object.nextPosArray && localFract >= 1.0) {
     v3_tra = [...object.nextPosArray];
     delete object.oldPosArray;
@@ -701,21 +727,31 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
     v3_tra = object.posArray;
   }
 
-  const rotDuration = duration * 0.7;
+  // ✅ ROTACIÓN SIMPLIFICADA
   let rotY = object.rotRad?.y || 0;
   
-  if (object.oldRotY !== undefined && object.rotY !== undefined) {
-    let rotElapsed = object.rotateStart ? (Date.now() - object.rotateStart) : 0;
-    let rotFract = clamp(rotElapsed / rotDuration, 0, 1);
+  if (object.oldRotY !== undefined && object.rotY !== undefined && object.rotateStart) {
+    const rotDuration = duration * 0.5;
+    const rotElapsed = Date.now() - object.rotateStart;
+    const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
     
-    rotY = lerp(object.oldRotY, object.rotY, rotFract);
+    // ✅ Interpolación suave con ease-in-out
+    const easedFract = rotFract < 0.5 
+      ? 2 * rotFract * rotFract 
+      : 1 - Math.pow(-2 * rotFract + 2, 2) / 2;
     
+    rotY = lerp(object.oldRotY, object.rotY, easedFract);
+    
+    // ✅ Limpiar cuando termine la interpolación
     if (rotFract >= 1.0) {
-      object.oldRotY = undefined;
-      object.rotateStart = undefined;
+      rotY = object.rotY;
+      object.rotRad.y = object.rotY; // ✅ Sincronizar rotRad.y
+      delete object.oldRotY;
+      delete object.rotateStart;
     }
   } else if (object.rotY !== undefined) {
     rotY = object.rotY;
+    object.rotRad.y = rotY; // ✅ Asegurar sincronización
   }
 
   let v3_sca = object.scaArray;

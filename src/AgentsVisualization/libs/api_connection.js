@@ -66,34 +66,26 @@ async function getCars() {
                 const current_agent = agents.find((object3d) => object3d.id == agent.id);
 
                 if(current_agent != undefined){
-                    current_agent.oldPosArray = [...current_agent.posArray];
-                    
-                    if (current_agent.rotation) {
-                        current_agent.oldRotation = { ...current_agent.rotation };
-                    }
-                    
+                    // ✅ SOLO actualizar dirección, NO rotation
                     current_agent.dirActual = agent.dirActual;
                     current_agent.nextDir = agent.nextDir;
                     
-                    current_agent.rotation = { 
-                        x: 0, 
-                        y: directionToAngle(agent.dirActual || "Right"), 
-                        z: 0 
-                    };
+                    // ✅ REMOVER esta línea que causa conflictos
+                    // current_agent.rotation = { ... };
                     
                     current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
                 } else {
                     const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
-                    newCar.oldPosArray = [...newCar.posArray];
                     newCar.dirActual = agent.dirActual;
                     newCar.nextDir = agent.nextDir;
                     
-                    newCar.rotation = { 
-                        x: 0, 
-                        y: directionToAngle(agent.dirActual || "Right"), 
-                        z: 0 
-                    };
-                    newCar.oldRotation = { ...newCar.rotation };
+                    // ✅ Para nuevo carro, inicializar rotación correctamente
+                    const initialAngle = directionToAngle(agent.dirActual || "Down");
+                    newCar.rotRad = { x: 0, y: initialAngle, z: 0 };
+                    newCar.rotY = initialAngle;
+                    newCar.oldRotY = initialAngle;
+                    
+                    newCar.oldPosArray = [...newCar.posArray];
                     
                     agents.push(newCar);
                 }
@@ -106,13 +98,14 @@ async function getCars() {
 }
 
 function directionToAngle(direction) {
+    const angulobase = Math.PI;
     const angles = {
-        "Right": 0,
-        "Up": Math.PI / 2,
-        "Left": Math.PI,
-        "Down": -Math.PI / 2
+        "Right": -Math.PI / 2 + angulobase,
+        "Left": Math.PI / 2 + angulobase,
+        "Up": Math.PI + angulobase,
+        "Down": 0 + angulobase
     };
-    return angles[direction] || 0;
+    return angles[direction] || (0 + angulobase);
 }
 
 /*

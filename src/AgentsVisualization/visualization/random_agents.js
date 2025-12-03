@@ -21,7 +21,7 @@ import { loadMtl } from '../libs/obj_loader';
 
 // Functions and arrays for the communication with the API
 import {
-  agents, obstacles, trafficLights, roads, initAgentsModel,
+  agents, obstacles, trafficLights, roads, destinations, initAgentsModel,
   update, getCars, getLights, getDestination, getRoads, getObstacles
 } from '../libs/api_connection.js';
 
@@ -312,7 +312,7 @@ function setupObjects(scene, gl, programInfo) {
   }
 
   // Create road model from OBJ
-  const baseRoad = new Object3D(-5);
+  const baseRoad = new Object3D(-5, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (roadObjData) {
     baseRoad.prepareVAO(gl, programInfo, roadObjData, roadMaterials);
     console.log('Road model loaded successfully');
@@ -363,6 +363,7 @@ function setupObjects(scene, gl, programInfo) {
     agent.vao = baseBuilding.vao;
     agent.scale = { x: 0.2, y: 0.2, z: 0.2 }; //{ x: 0.03, y: 0.05, z: 0.03 }
     agent.color = [0.7, 0.7, 0.7, 1.0];
+    agent.position.y += 0.3; // Elevar edificios sobre las calles
     scene.addObject(agent);
   }
 
@@ -376,6 +377,7 @@ function setupObjects(scene, gl, programInfo) {
     const isGreen = light.state === true || light.state === "True" || light.state === "true";
     light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
     light.state = light.state || true; // Default verde
+    light.position.y += 0.3; // Elevar semáforos sobre las calles
     
     scene.addObject(light);
   }
@@ -385,7 +387,7 @@ function setupObjects(scene, gl, programInfo) {
     road.arrays = baseRoad.arrays;
     road.bufferInfo = baseRoad.bufferInfo;
     road.vao = baseRoad.vao;
-    road.scale = { x: 1.0, y: 0.1, z: 1.0 };
+    road.scale = { x: 0.6, y: 0.6, z: 0.6 };
     
     // Apply color from MTL if available
     if (roadMaterials && Object.keys(roadMaterials).length > 0) {
@@ -400,6 +402,75 @@ function setupObjects(scene, gl, programInfo) {
     }
     
     scene.addObject(road);
+  }
+  
+  // Agregar calles debajo de edificios
+  let roadIdCounter = -1000;
+  for (const building of obstacles) {
+    const buildingRoad = new Object3D(roadIdCounter--);
+    buildingRoad.arrays = baseRoad.arrays;
+    buildingRoad.bufferInfo = baseRoad.bufferInfo;
+    buildingRoad.vao = baseRoad.vao;
+    buildingRoad.position.x = building.position.x;
+    buildingRoad.position.y = building.position.y - 0.3; // Posición original antes de elevar el edificio
+    buildingRoad.position.z = building.position.z;
+    buildingRoad.scale = { x: 0.6, y: 0.6, z: 0.6 };
+    
+    if (roadMaterials && Object.keys(roadMaterials).length > 0) {
+      const firstMaterial = Object.values(roadMaterials)[0];
+      buildingRoad.color = firstMaterial?.Kd ? [...firstMaterial.Kd, 1.0] : [0.5, 0.5, 0.5, 0.5];
+    } else {
+      buildingRoad.color = [0.5, 0.5, 0.5, 0.5];
+    }
+    
+    scene.addObject(buildingRoad);
+  }
+  
+  // Agregar calles debajo de semáforos
+  for (const light of trafficLights) {
+    const lightRoad = new Object3D(roadIdCounter--);
+    lightRoad.arrays = baseRoad.arrays;
+    lightRoad.bufferInfo = baseRoad.bufferInfo;
+    lightRoad.vao = baseRoad.vao;
+    lightRoad.position.x = light.position.x;
+    lightRoad.position.y = light.position.y - 0.3; // Posición original antes de elevar el semáforo
+    lightRoad.position.z = light.position.z;
+    lightRoad.scale = { x: 0.6, y: 0.6, z: 0.6 };
+    
+    if (roadMaterials && Object.keys(roadMaterials).length > 0) {
+      const firstMaterial = Object.values(roadMaterials)[0];
+      lightRoad.color = firstMaterial?.Kd ? [...firstMaterial.Kd, 1.0] : [0.5, 0.5, 0.5, 0.5];
+    } else {
+      lightRoad.color = [0.5, 0.5, 0.5, 0.5];
+    }
+    
+    scene.addObject(lightRoad);
+  }
+  
+  // Agregar calles debajo de destinos
+  for (const dest of destinations) {
+    const destRoad = new Object3D(roadIdCounter--);
+    destRoad.arrays = baseRoad.arrays;
+    destRoad.bufferInfo = baseRoad.bufferInfo;
+    destRoad.vao = baseRoad.vao;
+    destRoad.position.x = dest.position.x;
+    destRoad.position.y = dest.position.y;
+    destRoad.position.z = dest.position.z;
+    destRoad.scale = { x: 0.6, y: 0.6, z: 0.6 };
+    
+    if (roadMaterials && Object.keys(roadMaterials).length > 0) {
+      const firstMaterial = Object.values(roadMaterials)[0];
+      destRoad.color = firstMaterial?.Kd ? [...firstMaterial.Kd, 1.0] : [0.5, 0.5, 0.5, 0.5];
+    } else {
+      destRoad.color = [0.5, 0.5, 0.5, 0.5];
+    }
+    
+    scene.addObject(destRoad);
+  }
+  
+  // Elevar destinos sobre las calles
+  for (const dest of destinations) {
+    dest.position.y += 0.3;
   }
 }
 

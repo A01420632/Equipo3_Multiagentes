@@ -17,6 +17,25 @@ from .agent import Car, Traffic_Light, Destination, Obstacle, Road
 import json
 import os
 import mesa
+import requests
+
+url = "http://10.49.12.39:5000/api/"
+endpoint = "attempt"
+#endpoint = "validate_attempt"
+
+
+data = {
+    "year" : 2025,
+    "classroom" : 301,
+    "name" : "Los 3 Mosqueteros",
+    "current_cars": 0,
+    "total_arrived": 0,
+    "attempt_number": 5,
+}
+
+headers = {
+    "Content-Type": "application/json"
+}
 
 class CityModel(Model):
     """
@@ -527,6 +546,13 @@ class CityModel(Model):
         
         # Collect data
         self.datacollector.collect(self)
+        data["current_cars"] = self.countActiveCars(self)
+        data["total_arrived"] = self.totCarsArrived
+
+        if self.steps % data["attempt_number"] == 0:
+            response = requests.post(url+endpoint, data=json.dumps(data), headers=headers)
+            print("Request " + "successful" if response.status_code == 200 else "failed", "Status code:", response.status_code)
+            print("Response:", response.json())
 
     @staticmethod
     def countActiveCars(model):

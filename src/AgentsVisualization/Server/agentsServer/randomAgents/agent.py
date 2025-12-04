@@ -65,6 +65,7 @@ class Car(CellAgent):
         self.patience = 2
         self.recalculateThreshold = 5
         self.lastPosition = None
+        self.escapeProb = 0.2
         
         # Unjamming behavior
         self.unjammingAttempts = 0
@@ -430,8 +431,8 @@ class Car(CellAgent):
                 self.stuckCounter += 1
                 self.waitCounter += 1
                 
-                # 10% chance to recalculate route (escape traffic jam)
-                if random.random() < 0.1:
+                # chance to recalculate route (escape traffic jam)
+                if random.random() < self.escapeProb:
                     self.calculatePath()
                     self.stuckCounter = 0
                     self.waitCounter = 0

@@ -37,15 +37,21 @@ import fsColorGLSL from '../assets/shaders/fs_color.glsl?raw';
 import vsSkyboxGLSL from '../assets/shaders/vs_skybox.glsl?raw';
 import fsSkyboxGLSL from '../assets/shaders/fs_skybox.glsl?raw';
 
+// Importar shaders de luna
+import vsMoonGLSL from '../assets/shaders/vs_moon.glsl?raw';
+import fsMoonGLSL from '../assets/shaders/fs_moon.glsl?raw';
+
 const scene = new Scene3D();
 
 // Global variables
 let phongProgramInfo = undefined;
 let colorProgramInfo = undefined;
 let skyboxProgramInfo = undefined;
+let moonProgramInfo = undefined;
 let skyboxBufferInfo = undefined;
 let skyboxVAO = undefined;
 let skyboxTexture = undefined;
+let moonTexture = undefined;
 let gl = undefined;
 const duration = 1000; // ms
 let elapsed = 0;
@@ -61,6 +67,7 @@ let trafficLightObjData = null;
 let roadObjData = null;
 let destinationObjData = null;
 let treeObjData = null;
+let moonObjData = null;
 
 // Variables para animación del caballo
 let horseAnimationFrames = []; // Array con los 4 frames de animación
@@ -77,6 +84,7 @@ let trafficLightMaterialsG = null;
 let roadMaterials = null;
 let destinationMaterials = null;
 let treeMaterials = null;
+let moonMaterials = null;
 
 let angulobase = Math.PI;//-Math.PI / 2;
 const DIRECTION_ANGLES = {
@@ -133,9 +141,16 @@ async function main() {
   // Prepare the program with the shaders
   colorProgramInfo = twgl.createProgramInfo(gl, [vsColorGLSL, fsColorGLSL]);
   skyboxProgramInfo = twgl.createProgramInfo(gl, [vsSkyboxGLSL, fsSkyboxGLSL]);
+  moonProgramInfo = twgl.createProgramInfo(gl, [vsMoonGLSL, fsMoonGLSL]);
 
   // Setup skybox
   setupSkybox();
+  
+  // Load moon texture
+  moonTexture = twgl.createTexture(gl, {
+    src: '../assets/models/Moon.jpg',
+    crossOrigin: '',
+  });
 
   // Load OBJ models from assets folder
   console.log('Loading OBJ models...');
@@ -179,6 +194,7 @@ async function main() {
   const roadData = await loadObjFile('../assets/models/Road.obj');
   const destinationData = await loadObjFile('../assets/models/Barrack.obj');
   const treeData = await loadObjFile('../assets/models/Tree.obj');
+  const moonData = await loadObjFile('../assets/models/Moon.obj');
   
   // Extract OBJ data and materials
   buildingObjData = buildingData ? buildingData.objData : null;
@@ -186,6 +202,7 @@ async function main() {
   roadObjData = roadData ? roadData.objData : null;
   destinationObjData = destinationData ? destinationData.objData : null;
   treeObjData = treeData ? treeData.objData : null;
+  moonObjData = moonData ? moonData.objData : null;
   
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
@@ -193,6 +210,7 @@ async function main() {
   roadMaterials = roadData ? roadData.materials : null;
   destinationMaterials = destinationData ? destinationData.materials : null;
   treeMaterials = treeData ? treeData.materials : null;
+  moonMaterials = moonData ? moonData.materials : null;
   
   console.log('OBJ models and materials loaded');
 
@@ -236,10 +254,10 @@ function setupScene() {
   scene.camera.setupControls();
 
   let light = new Light3D(0, 
-    [3, 3, 5], // Position
-    [0.3, 0.3, 0.3, 1.0],// Ambient
-    [1.0, 1.0, 1.0, 1.0],  // Diffuse
-    [1.0, 1.0, 1.0, 1.0]); // Specular
+    [18, 40, 17.5], // Position (Luna)
+    [0.15, 0.15, 0.2, 1.0],// Ambient (luz lunar azulada tenue)
+    [0.2, 0.2, 0.25, 1.0],  // Diffuse (muy bajo para ambiente nocturno)
+    [0.1, 0.1, 0.15, 1.0]); // Specular (mínimo)
   scene.addLight(light);
 }
 
@@ -388,6 +406,16 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for trees');
   }
 
+  // Create moon model from OBJ (usar shader de luna con textura)
+  const baseMoon = new Object3D(-9, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  if (moonObjData) {
+    baseMoon.prepareVAO(gl, moonProgramInfo, moonObjData, moonMaterials);
+    console.log('Moon model loaded successfully');
+  } else {
+    baseMoon.prepareVAO(gl, moonProgramInfo);
+    console.log('Using default cube for moon');
+  }
+
   // Store the base models for later use
   scene.baseCube = baseCube;
   scene.baseHorseFramesBrown = baseHorseFramesBrown;
@@ -402,6 +430,15 @@ function setupObjects(scene, gl, programInfo) {
   scene.baseRoad = baseRoad;
   scene.baseDestination = baseDestination;
   scene.baseTree = baseTree;
+  scene.baseMoon = baseMoon;
+
+  // Setup moon at light position (posición absoluta fija)
+  const moon = new Object3D(-10000, [18, 40, 17.5], [0,0,0], [3,3,3], [0.9, 0.9, 0.95, 1.0], false);
+  moon.arrays = baseMoon.arrays;
+  moon.bufferInfo = baseMoon.bufferInfo;
+  moon.vao = baseMoon.vao;
+  moon.isFixedPosition = true; // Marcar como posición fija en el mundo
+  scene.addObject(moon);
 
   // Setup horses with IDLE model
   for (const agent of agents) {
@@ -970,8 +1007,32 @@ async function drawScene() {
   // Switch to phong program for objects
   gl.useProgram(phongProgramInfo.program);
 
+  // Draw the moon with special shader and texture
+  const moon = scene.objects.find(obj => obj.id === -10000);
+  if (moon) {
+    gl.useProgram(moonProgramInfo.program);
+    
+    // Set light uniforms for moon with self-illumination
+    const moonLightUniforms = {
+      u_viewWorldPosition: scene.camera.posArray,
+      u_lightWorldPosition: scene.lights[0].posArray,
+      u_ambientLight: scene.lights[0].ambient,
+      u_diffuseLight: scene.lights[0].diffuse,
+      u_specularLight: scene.lights[0].specular,
+      u_texture: moonTexture,
+      u_emissive: 0.6, // La luna emite luz propia (60% de brillo)
+    };
+    twgl.setUniforms(moonProgramInfo, moonLightUniforms);
+    drawObject(gl, moonProgramInfo, moon, viewProjectionMatrix, fract);
+  }
+  
+  // Switch back to phong program for other objects
+  gl.useProgram(phongProgramInfo.program);
+  
   // Draw the objects
   for (let object of scene.objects) {
+    // Skip moon since we already drew it
+    if (object.id === -10000) continue;
     // Encontrar la linterna encendida más cercana (si existe)
     let closestLantern = null;
     let closestDistance = Infinity;
@@ -993,36 +1054,36 @@ async function drawScene() {
     
     // Configurar uniforms para este objeto
     if (closestLantern) {
-      // Hay una linterna cerca: combinar luz global + luz de linterna
+      // Hay una linterna cerca: usar su posición como fuente de luz principal
       const attenuation = Math.max(0, 1.0 - (closestDistance / 5.0)); // Fade out con distancia
       
-      let combinedUniforms = {
+      let lanternUniforms = {
         u_viewWorldPosition: scene.camera.posArray,
         u_lightWorldPosition: closestLantern.posArray, // Usar posición de la linterna
-        u_ambientLight: scene.lights[0].ambient, // Mantener ambiente global
+        u_ambientLight: scene.lights[0].ambient, // Ambiente lunar tenue
         u_diffuseLight: [
-          scene.lights[0].diffuse[0] + closestLantern.diffuse[0] * attenuation,
-          scene.lights[0].diffuse[1] + closestLantern.diffuse[1] * attenuation,
-          scene.lights[0].diffuse[2] + closestLantern.diffuse[2] * attenuation,
+          scene.lights[0].diffuse[0] + closestLantern.diffuse[0] * attenuation * 3.5,
+          scene.lights[0].diffuse[1] + closestLantern.diffuse[1] * attenuation * 3.5,
+          scene.lights[0].diffuse[2] + closestLantern.diffuse[2] * attenuation * 3.0,
           1.0
         ],
         u_specularLight: [
-          scene.lights[0].specular[0] + closestLantern.specular[0] * attenuation,
-          scene.lights[0].specular[1] + closestLantern.specular[1] * attenuation,
-          scene.lights[0].specular[2] + closestLantern.specular[2] * attenuation,
+          closestLantern.specular[0] * attenuation * 2.5,
+          closestLantern.specular[1] * attenuation * 2.5,
+          closestLantern.specular[2] * attenuation * 2.0,
           1.0
         ],
-      }
-      twgl.setUniforms(phongProgramInfo, combinedUniforms);
+      };
+      twgl.setUniforms(phongProgramInfo, lanternUniforms);
     } else {
-      // No hay linterna cerca: usar solo luz global
+      // No hay linterna cerca: usar solo luz global tenue (ambiente nocturno)
       let globalUniforms = {
         u_viewWorldPosition: scene.camera.posArray,
         u_lightWorldPosition: scene.lights[0].posArray,
         u_ambientLight: scene.lights[0].ambient,
         u_diffuseLight: scene.lights[0].diffuse,
         u_specularLight: scene.lights[0].specular,
-      }
+      };
       twgl.setUniforms(phongProgramInfo, globalUniforms);
     }
     

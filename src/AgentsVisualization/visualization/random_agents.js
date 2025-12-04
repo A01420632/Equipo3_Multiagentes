@@ -284,10 +284,10 @@ function setupScene() {
 
   // Create main scene light
   let light = new Light3D(0, 
-    [18, 40, 17.5], // Position (Luna)
-    [0.15, 0.15, 0.2, 1.0],// Ambient (luz lunar azulada tenue)
-    [0.2, 0.2, 0.25, 1.0],  // Diffuse (muy bajo para ambiente nocturno)
-    [0.1, 0.1, 0.15, 1.0]); // Specular (mínimo)
+    [18, 20, 17.5], // Position
+    [0.2, 0.2, 0.25, 1.0],  // Ambient
+    [0.5, 0.5, 0.6, 1.0],   // Diffuse
+    [0.3, 0.3, 0.35, 1.0]); // Specular
   scene.addLight(light);
 }
 
@@ -481,7 +481,7 @@ function setupObjects(scene, gl, programInfo) {
   scene.baseMoon = baseMoon;
 
   // Place moon at light position (fixed world position)
-  const moon = new Object3D(-10000, [18, 40, 17.5], [0,0,0], [3,3,3], [0.9, 0.9, 0.95, 1.0], false);
+  const moon = new Object3D(-10000, [18, 20, 17.5], [0,0,0], [3,3,3], [0.9, 0.9, 0.95, 1.0], false);
   moon.arrays = baseMoon.arrays;
   moon.bufferInfo = baseMoon.bufferInfo;
   moon.vao = baseMoon.vao;

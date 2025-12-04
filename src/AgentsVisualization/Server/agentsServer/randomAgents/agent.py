@@ -322,8 +322,6 @@ class Car(CellAgent):
         """
         Updates car's facing direction based on movement.
         
-        Only changes direction on straight moves, maintains direction on diagonals.
-        
         Args:
             nextPos: Position moved to
             newDirection: Explicit direction to set (if provided)
@@ -340,21 +338,26 @@ class Car(CellAgent):
         dx = nextPos[0] - currentPos[0]
         dy = nextPos[1] - currentPos[1]
         
-        # Update direction only on straight moves
         if dx != 0 and dy == 0:
-            if dx > 0:
-                self.dirActual = "Right"
-            elif dx < 0:
-                self.dirActual = "Left"
-            self.nextDir = self.dirActual
+            self.dirActual = "Right" if dx > 0 else "Left"
         elif dy != 0 and dx == 0:
-            if dy > 0:
-                self.dirActual = "Up"
-            elif dy < 0:
-                self.dirActual = "Down"
-            self.nextDir = self.dirActual
+            self.dirActual = "Up" if dy > 0 else "Down"
         else:
-            # Maintain direction on diagonal moves
+            pass
+        
+        if self.path and self.pathIndex < len(self.path):
+            nextPathPos = self.path[self.pathIndex]
+            nextDx = nextPathPos[0] - nextPos[0]
+            nextDy = nextPathPos[1] - nextPos[1]
+            
+            if nextDx != 0 and nextDy == 0:
+                self.nextDir = "Right" if nextDx > 0 else "Left"
+            elif nextDy != 0 and nextDx == 0:
+                self.nextDir = "Up" if nextDy > 0 else "Down"
+            else:
+                # Maintain direction for diagonal
+                self.nextDir = self.dirActual
+        else:
             self.nextDir = self.dirActual
     
     def step(self):
@@ -413,8 +416,7 @@ class Car(CellAgent):
                 self.stuckCounter = 0
                 self.waitCounter = 0
                 self.lastPosition = nextPos
-                self.updateDirection(nextPos)
-                
+                self.updateDirection(nextPos) 
                 # Check if arrived
                 agentsInCell = list(self.cell.agents)
                 if any(isinstance(agent, Destination) for agent in agentsInCell):
@@ -445,7 +447,7 @@ class Car(CellAgent):
                     self.cell = nextCell
                     self.steps_taken += 1
                     self.model.totStepsTaken += 1
-                    self.updateDirection(newPos, newDirection)
+                    self.updateDirection(newPos, newDirection)  
                     self.stuckCounter = 0
                     self.waitCounter = 0
                     self.state = "moving"
@@ -477,7 +479,7 @@ class Car(CellAgent):
                     self.model.totStepsTaken += 1
                     self.stuckCounter = 0
                     self.waitCounter = 0
-                    self.updateDirection(nextPos)
+                    self.updateDirection(nextPos)  
                     self.state = "moving"
                     
                     # Check if arrived
@@ -498,7 +500,7 @@ class Car(CellAgent):
                 self.cell = nextCell
                 self.steps_taken += 1
                 self.model.totStepsTaken += 1
-                self.updateDirection(newPos, newDirection)
+                self.updateDirection(newPos, newDirection)  
                 self.stuckCounter = 0
                 self.waitCounter = 0
                 self.state = "moving"
@@ -528,10 +530,9 @@ class Car(CellAgent):
                     self.stuckCounter = 0
                     self.waitCounter = 0
                     self.unjammingAttempts = 0
-                    self.updateDirection(nextPos)
+                    self.updateDirection(nextPos)  
                     self.state = "moving"
                     return
-            
             # Try to find any valid forward move
             alternative = self.findAlternativeMove()
             
@@ -541,7 +542,7 @@ class Car(CellAgent):
                 self.cell = nextCell
                 self.steps_taken += 1
                 self.model.totStepsTaken += 1
-                self.updateDirection(newPos, newDirection)
+                self.updateDirection(newPos, newDirection)  
                 self.stuckCounter = 0
                 self.waitCounter = 0
                 self.unjammingAttempts = 0
@@ -549,7 +550,7 @@ class Car(CellAgent):
                 return
             
             if self.unjammingAttempts > self.maxUnjammingAttempts:
-                # Recalculate path aggressively (ignore cars)
+                # Recalculate path aggressively
                 if self.dest and self.cell:
                     start = self.cell.coordinate
                     end = self.dest.cell.coordinate
@@ -562,8 +563,6 @@ class Car(CellAgent):
                 self.model.traffic_jams_this_step += 1
                 self.state = "moving"
                 return
-            
-            # Still stuck, keep trying
             return
 
 
@@ -592,16 +591,18 @@ class Destination(FixedAgent):
 
 class Obstacle(FixedAgent):
     """Obstacle agent for buildings and barriers"""
-    def __init__(self, model, cell, unique_id):
+    def __init__(self, model, cell, unique_id, is_tree=False):
         super().__init__(model)
         self.unique_id = unique_id
+        self.is_tree = is_tree
         self.cell = cell
 
 
 class Road(FixedAgent):
     """Road agent that determines movement direction"""
-    def __init__(self, model, cell, unique_id, direction="Left"):
+    def __init__(self, model, cell, unique_id, direction="Left", is_decorative_road=False):
         super().__init__(model)
         self.unique_id = unique_id
         self.cell = cell
         self.direction = direction
+        self.is_decorative_road = is_decorative_road

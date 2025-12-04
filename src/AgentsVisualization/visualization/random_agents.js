@@ -40,15 +40,21 @@ import fsColorGLSL from '../assets/shaders/fs_color.glsl?raw';
 import vsSkyboxGLSL from '../assets/shaders/vs_skybox.glsl?raw';
 import fsSkyboxGLSL from '../assets/shaders/fs_skybox.glsl?raw';
 
+// Importar shaders de luna
+import vsMoonGLSL from '../assets/shaders/vs_moon.glsl?raw';
+import fsMoonGLSL from '../assets/shaders/fs_moon.glsl?raw';
+
 const scene = new Scene3D();
 
 // Global variables for WebGL program management
 let phongProgramInfo = undefined;
 let colorProgramInfo = undefined;
 let skyboxProgramInfo = undefined;
+let moonProgramInfo = undefined;
 let skyboxBufferInfo = undefined;
 let skyboxVAO = undefined;
 let skyboxTexture = undefined;
+let moonTexture = undefined;
 let gl = undefined;
 
 // Animation timing constants
@@ -66,11 +72,15 @@ let buildingObjData = null;
 let trafficLightObjData = null;
 let roadObjData = null;
 let destinationObjData = null;
+let treeObjData = null;
+let moonObjData = null;
 
-// Horse animation frame data
-let horseAnimationFrames = []; // Array containing 4 animation frames
-let horseIdleObjData = null;   // Idle frame when horse is not moving
-let horseMaterials = null;     // Shared materials for all horse frames
+// Variables para animación del caballo
+let horseAnimationFrames = []; // Array con los 4 frames de animación
+let horseIdleObjData = null;   // Frame IDLE
+let horseMaterialsBrown = null;  // Materiales café
+let horseMaterialsWhite = null;  // Materiales blanco
+let horseMaterialsBlack = null;  // Materiales negro
 
 // Material data for different objects
 let carMaterials = null;
@@ -79,6 +89,8 @@ let trafficLightMaterials = null;
 let trafficLightMaterialsG = null;
 let roadMaterials = null;
 let destinationMaterials = null;
+let treeMaterials = null;
+let moonMaterials = null;
 
 // Direction angle mapping for car rotation
 let angulobase = Math.PI;
@@ -160,49 +172,74 @@ async function main() {
   phongProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
   colorProgramInfo = twgl.createProgramInfo(gl, [vsColorGLSL, fsColorGLSL]);
   skyboxProgramInfo = twgl.createProgramInfo(gl, [vsSkyboxGLSL, fsSkyboxGLSL]);
+  moonProgramInfo = twgl.createProgramInfo(gl, [vsMoonGLSL, fsMoonGLSL]);
 
   // Setup skybox environment
   setupSkybox();
 
-  // Load all 3D models from assets folder
+  // Load moon texture
+  moonTexture = twgl.createTexture(gl, {
+    src: '../assets/models/Moon.jpg',
+    crossOrigin: '',
+  });
+   
   console.log('Loading OBJ models...');
   
-  // Load horse animation frames (4 frames for walking animation)
-  const horse1Data = await loadObjFile('../assets/models/Horse1.obj');
-  const horse2Data = await loadObjFile('../assets/models/Horse2.obj');
-  const horse3Data = await loadObjFile('../assets/models/Horse3.obj');
-  const horse4Data = await loadObjFile('../assets/models/Horse4.obj');
-  const horseIdleData = await loadObjFile('../assets/models/HorseIdle.obj');
+  // Load horse animation frames (4 frames) and materials
+  const loadHorseFrame = async (url) => {
+    const response = await fetch(url);
+    return response.ok ? await response.text() : null;
+  };
   
-  // Store animation frames
+  const loadHorseMtl = async (url) => {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        const mtlText = await response.text();
+        return loadMtl(mtlText);
+      }
+    } catch (error) {
+      console.error(`Error loading horse MTL from ${url}:`, error);
+    }
+    return null;
+  };
+  
+  horseMaterialsBrown = await loadHorseMtl('../assets/models/Horse_Brown.mtl');
+  horseMaterialsWhite = await loadHorseMtl('../assets/models/Horse_White.mtl');
+  horseMaterialsBlack = await loadHorseMtl('../assets/models/Horse_Black.mtl');
+  
   horseAnimationFrames = [
-    horse1Data ? horse1Data.objData : null,
-    horse2Data ? horse2Data.objData : null,
-    horse3Data ? horse3Data.objData : null,
-    horse4Data ? horse4Data.objData : null
+    await loadHorseFrame('../assets/models/Horse1.obj'),
+    await loadHorseFrame('../assets/models/Horse2.obj'),
+    await loadHorseFrame('../assets/models/Horse3.obj'),
+    await loadHorseFrame('../assets/models/Horse4.obj')
   ];
   
-  horseIdleObjData = horseIdleData ? horseIdleData.objData : null;
-  horseMaterials = horse1Data ? horse1Data.materials : null;
+  horseIdleObjData = await loadHorseFrame('../assets/models/HorseIdle.obj');
   
-  // Load environment models
   const buildingData = await loadObjFile('../assets/models/House.obj');
   const trafficLightData = await loadObjFile('../assets/models/Lantern.obj');
   const trafficLightDataGreen = await loadObjFile('../assets/models/LanternOn.obj');
   const roadData = await loadObjFile('../assets/models/Road.obj');
-  const destinationData = await loadObjFile('../assets/models/Stable.obj');
+  const destinationData = await loadObjFile('../assets/models/Barrack.obj');
+  const treeData = await loadObjFile('../assets/models/Tree.obj');
+  const moonData = await loadObjFile('../assets/models/Moon.obj');
   
   // Extract OBJ data and materials
   buildingObjData = buildingData ? buildingData.objData : null;
   trafficLightObjData = trafficLightData ? trafficLightData.objData : null;
   roadObjData = roadData ? roadData.objData : null;
   destinationObjData = destinationData ? destinationData.objData : null;
+  treeObjData = treeData ? treeData.objData : null;
+  moonObjData = moonData ? moonData.objData : null;
   
   buildingMaterials = buildingData ? buildingData.materials : null;
   trafficLightMaterials = trafficLightData ? trafficLightData.materials : null;
   trafficLightMaterialsG = trafficLightDataGreen ? trafficLightDataGreen.materials : null;
   roadMaterials = roadData ? roadData.materials : null;
   destinationMaterials = destinationData ? destinationData.materials : null;
+  treeMaterials = treeData ? treeData.materials : null;
+  moonMaterials = moonData ? moonData.materials : null;
   
   console.log('OBJ models and materials loaded');
 
@@ -247,10 +284,10 @@ function setupScene() {
 
   // Create main scene light
   let light = new Light3D(0, 
-    [3, 3, 5],                  // Light position
-    [0.3, 0.3, 0.3, 1.0],      // Ambient color
-    [1.0, 1.0, 1.0, 1.0],      // Diffuse color
-    [1.0, 1.0, 1.0, 1.0]);     // Specular color
+    [18, 40, 17.5], // Position (Luna)
+    [0.15, 0.15, 0.2, 1.0],// Ambient (luz lunar azulada tenue)
+    [0.2, 0.2, 0.25, 1.0],  // Diffuse (muy bajo para ambiente nocturno)
+    [0.1, 0.1, 0.15, 1.0]); // Specular (mínimo)
   scene.addLight(light);
 }
 
@@ -287,22 +324,11 @@ function angleDifference(from, to) {
   return diff;
 }
 
-/**
- * Generates a random color for car visualization
- * @returns {Array<number>} RGB color array [r, g, b, a]
- */
-function getRandomCarColor() {
+function getRandomHorseColor() {
   const colors = [
-    [1.0, 0.0, 0.0, 1.0],  // Red
-    [0.0, 0.0, 1.0],       // Blue
-    [1.0, 1.0, 0.0],       // Yellow
-    [0.0, 1.0, 0.0],       // Green
-    [1.0, 0.5, 0.0],       // Orange
-    [0.5, 0.0, 0.5],       // Purple
-    [0.0, 1.0, 1.0],       // Cyan
-    [1.0, 1.0, 1.0],       // White
-    [0.2, 0.2, 0.2],       // Black
-    [0.7, 0.7, 0.7],       // Gray
+    [0.174647, 0.074214, 0.046665, 1.0],  // Café (color original del MTL)
+    [0.95, 0.95, 0.95, 1.0],  // Blanco
+    [0.1, 0.1, 0.1, 1.0],  // Negro
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 }
@@ -319,24 +345,53 @@ function setupObjects(scene, gl, programInfo) {
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
-  // Create horse animation frames
-  const baseHorseFrames = [];
+  // Create horse animation frames for each color
+  const baseHorseFramesBrown = [];
+  const baseHorseFramesWhite = [];
+  const baseHorseFramesBlack = [];
+  
   for (let i = 0; i < horseAnimationFrames.length; i++) {
-    const horseFrame = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    // Frames café
+    const horseFrameBrown = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
     if (horseAnimationFrames[i]) {
-      horseFrame.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterials);
+      horseFrameBrown.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterialsBrown);
     } else {
-      horseFrame.prepareVAO(gl, programInfo);
+      horseFrameBrown.prepareVAO(gl, programInfo);
     }
-    baseHorseFrames.push(horseFrame);
+    baseHorseFramesBrown.push(horseFrameBrown);
+    
+    // Frames blanco
+    const horseFrameWhite = new Object3D(-200 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    if (horseAnimationFrames[i]) {
+      horseFrameWhite.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterialsWhite);
+    } else {
+      horseFrameWhite.prepareVAO(gl, programInfo);
+    }
+    baseHorseFramesWhite.push(horseFrameWhite);
+    
+    // Frames negro
+    const horseFrameBlack = new Object3D(-300 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+    if (horseAnimationFrames[i]) {
+      horseFrameBlack.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterialsBlack);
+    } else {
+      horseFrameBlack.prepareVAO(gl, programInfo);
+    }
+    baseHorseFramesBlack.push(horseFrameBlack);
   }
   
-  // Create horse IDLE frame for stationary cars
-  const baseHorseIdle = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  // Create horse IDLE frames
+  const baseHorseIdleBrown = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  const baseHorseIdleWhite = new Object3D(-210, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  const baseHorseIdleBlack = new Object3D(-310, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  
   if (horseIdleObjData) {
-    baseHorseIdle.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterials);
+    baseHorseIdleBrown.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterialsBrown);
+    baseHorseIdleWhite.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterialsWhite);
+    baseHorseIdleBlack.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterialsBlack);
   } else {
-    baseHorseIdle.prepareVAO(gl, programInfo);
+    baseHorseIdleBrown.prepareVAO(gl, programInfo);
+    baseHorseIdleWhite.prepareVAO(gl, programInfo);
+    baseHorseIdleBlack.prepareVAO(gl, programInfo);
   }
 
   // Create building model (with inverted faces for proper rendering)
@@ -378,8 +433,8 @@ function setupObjects(scene, gl, programInfo) {
     baseRoad.prepareVAO(gl, programInfo);
     console.log('Using default cube for roads');
   }
-  
-  // Create destination model
+
+  // Create destination model from OBJ
   const baseDestination = new Object3D(-7, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (destinationObjData) {
     baseDestination.prepareVAO(gl, programInfo, destinationObjData, destinationMaterials);
@@ -389,29 +444,77 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for destinations');
   }
 
+   // Create tree model from OBJ
+  const baseTree = new Object3D(-8, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
+  if (treeObjData) {
+    baseTree.prepareVAO(gl, programInfo, treeObjData, treeMaterials);
+    console.log('Tree model loaded successfully');
+  } else {
+    baseTree.prepareVAO(gl, programInfo);
+    console.log('Using default cube for trees');
+  }
+
+  // Create moon model from OBJ (usar shader de luna con textura)
+  const baseMoon = new Object3D(-9, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
+  if (moonObjData) {
+    baseMoon.prepareVAO(gl, moonProgramInfo, moonObjData, moonMaterials);
+    console.log('Moon model loaded successfully');
+  } else {
+    baseMoon.prepareVAO(gl, moonProgramInfo);
+    console.log('Using default cube for moon');
+  }
+
   // Store base models in scene for later reference
   scene.baseCube = baseCube;
-  scene.baseHorseFrames = baseHorseFrames;
-  scene.baseHorseIdle = baseHorseIdle;
+  scene.baseHorseFramesBrown = baseHorseFramesBrown;
+  scene.baseHorseFramesWhite = baseHorseFramesWhite;
+  scene.baseHorseFramesBlack = baseHorseFramesBlack;
+  scene.baseHorseIdleBrown = baseHorseIdleBrown;
+  scene.baseHorseIdleWhite = baseHorseIdleWhite;
+  scene.baseHorseIdleBlack = baseHorseIdleBlack;
   scene.baseBuilding = baseBuilding;
   scene.baseTrafficLight = baseTrafficLight;
   scene.baseTrafficLightGreen = baseTrafficLightGreen;
   scene.baseRoad = baseRoad;
   scene.baseDestination = baseDestination;
+  scene.baseTree = baseTree;
+  scene.baseMoon = baseMoon;
 
-  // Initialize all car agents with IDLE model
+  // Place moon at light position (fixed world position)
+  const moon = new Object3D(-10000, [18, 40, 17.5], [0,0,0], [3,3,3], [0.9, 0.9, 0.95, 1.0], false);
+  moon.arrays = baseMoon.arrays;
+  moon.bufferInfo = baseMoon.bufferInfo;
+  moon.vao = baseMoon.vao;
+  moon.isFixedPosition = true; // Marcar como posición fija en el mundo
+  scene.addObject(moon);
+
+  // Initialize car agents with IDLE model
   for (const agent of agents) {
-    agent.arrays = baseHorseIdle.arrays;
-    agent.bufferInfo = baseHorseIdle.bufferInfo;
-    agent.vao = baseHorseIdle.vao;
-    agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
+    // Asignar color aleatorio (0=café, 1=blanco, 2=negro)
+    agent.horseColorType = Math.floor(Math.random() * 3);
     
-    agent.color = getRandomCarColor();
+    // Seleccionar el modelo IDLE según el color
+    let idleModel;
+    if (agent.horseColorType === 0) {
+      idleModel = baseHorseIdleBrown;
+    } else if (agent.horseColorType === 1) {
+      idleModel = baseHorseIdleWhite;
+    } else {
+      idleModel = baseHorseIdleBlack;
+    }
+    
+    // Inicializar con frame IDLE del color correspondiente
+    agent.arrays = idleModel.arrays;
+    agent.bufferInfo = idleModel.bufferInfo;
+    agent.vao = idleModel.vao;
+    agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
     
     const initialDirection = agent.dirActual || "Down";
     agent.currentDirection = initialDirection;
     const initialAngle = directionToAngle(initialDirection);
-    
+
+    agent.rotRad = agent.rotRad || { x: 0, y: initialAngle, z: 0 };
+
     agent.oldRotY = initialAngle;
     agent.rotY = initialAngle;
     agent.oldPosArray = [...agent.posArray];
@@ -427,16 +530,42 @@ function setupObjects(scene, gl, programInfo) {
 
   // Setup obstacles (buildings) with building model
   for (const agent of obstacles) {
-    agent.arrays = baseBuilding.arrays;
-    agent.bufferInfo = baseBuilding.bufferInfo;
-    agent.vao = baseBuilding.vao;
-    agent.scale = { x: 0.2, y: 0.4, z: 0.2 };
-    agent.color = [0.7, 0.7, 0.7, 1.0];
-    agent.position.y += 0.3; // Elevate buildings above streets
+    // Decidir si es árbol o edificio
+    if (agent.is_tree) {
+      agent.arrays = baseTree.arrays;
+      agent.bufferInfo = baseTree.bufferInfo;
+      agent.vao = baseTree.vao;
+      agent.scale = { x: 0.2, y: 0.4, z: 0.2 };
+      
+      // Color verde para árboles
+      if (treeMaterials && Object.keys(treeMaterials).length > 0) {
+        const firstMaterial = Object.values(treeMaterials)[0];
+        agent.color = firstMaterial?.Kd ? [...firstMaterial.Kd, 1.0] : [0.15, 0.50, 0.15, 1.0];
+      } else {
+        agent.color = [0.15, 0.50, 0.15, 1.0];
+      }
+    } else {
+      agent.arrays = baseBuilding.arrays;
+      agent.bufferInfo = baseBuilding.bufferInfo;
+      agent.vao = baseBuilding.vao;
+      
+      // Escala aleatoria en Y para edificios de diferentes alturas
+      const randomHeight = 0.2 + Math.random() * 0.2; // Entre 0.2 y 0.4
+      agent.scale = { x: 0.2, y: randomHeight, z: 0.2 };
+      agent.color = [0.7, 0.7, 0.7, 1.0];
+      
+      // Apply rotation to buildings only
+      if (agent.serverRotation !== undefined) {
+        agent.rotY = (agent.serverRotation * Math.PI) / 180;
+      }
+    }
+    
+    agent.position.y += 0.3; // Elevar sobre las calles
     scene.addObject(agent);
   }
 
-  // Setup traffic lights (default: green state)
+  // Setup traffic lights with traffic light model (default: verde)
+  let trafficLightIndex = 1; // Empezar desde 1, el 0 es la luz global
   for (const light of trafficLights) {
     light.arrays = baseTrafficLightGreen.arrays;
     light.bufferInfo = baseTrafficLightGreen.bufferInfo;
@@ -445,8 +574,9 @@ function setupObjects(scene, gl, programInfo) {
     
     const isGreen = light.state === true || light.state === "True" || light.state === "true";
     light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
-    light.state = light.state || true;
-    light.position.y += 0.3; // Elevate traffic lights above streets
+    light.state = light.state || true; // Default verde
+    light.position.y += 0.3; // Elevar semáforos sobre las calles
+    light.lightIndex = null; // Se asignará dinámicamente en updateTrafficLights
     
     scene.addObject(light);
   }
@@ -478,7 +608,7 @@ function setupObjects(scene, gl, programInfo) {
     dest.arrays = baseDestination.arrays;
     dest.bufferInfo = baseDestination.bufferInfo;
     dest.vao = baseDestination.vao;
-    dest.scale = { x: 0.05, y: 0.1, z: 0.05 };
+    dest.scale = { x: 0.01, y: 0.02, z: 0.01 };
     
     // Apply color from MTL if available
     if (destinationMaterials && Object.keys(destinationMaterials).length > 0) {
@@ -489,7 +619,12 @@ function setupObjects(scene, gl, programInfo) {
         dest.color = [0.5, 0.5, 0.5, 0.5];
       }
     } else {
-      dest.color = [0.5, 0.5, 0.5, 0.5];
+      dest.color = [0.5, 0.5, 0.5, 0.5]; 
+    }
+    
+    // Aplicar rotación si está disponible (convertir grados a radianes)
+    if (dest.serverRotation !== undefined) {
+      dest.rotY = (dest.serverRotation * Math.PI) / 180;
     }
     
     scene.addObject(dest);
@@ -537,8 +672,8 @@ function setupObjects(scene, gl, programInfo) {
     
     scene.addObject(lightRoad);
   }
-  
-  // Add roads beneath destinations
+   
+  // Agregar calles debajo de destinos
   for (const dest of destinations) {
     const destRoad = new Object3D(roadIdCounter--);
     destRoad.arrays = baseRoad.arrays;
@@ -559,7 +694,7 @@ function setupObjects(scene, gl, programInfo) {
     scene.addObject(destRoad);
   }
   
-  // Elevate destinations above streets
+  // Lift destinations above streets
   for (const dest of destinations) {
     dest.position.y += 0.3;
   }
@@ -575,13 +710,40 @@ async function updateTrafficLights() {
     if (response.ok) {
       let result = await response.json();
       
+      // Primero, eliminar todas las luces de linternas (mantener solo la luz global en index 0)
+      scene.lights = scene.lights.slice(0, 1);
+      
+      // Resetear todos los lightIndex
+      for (const obj of scene.objects) {
+        if (obj.lightIndex !== undefined) {
+          obj.lightIndex = null;
+        }
+      }
+      
+      // Ahora crear luces solo para semáforos en verde
+      let nextLightIndex = 1;
       for (const lightData of result.positions) {
         const lightObj = scene.objects.find(obj => obj.id == lightData.id);
         
         if (lightObj) {
           const isGreen = lightData.state === true || lightData.state === "true" || lightData.state === 1;
+          
           lightObj.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
           lightObj.state = isGreen;
+          
+          // Solo crear luz si está en verde
+          if (isGreen) {
+            const lanternLight = new Light3D(
+              nextLightIndex,
+              [lightObj.position.x, lightObj.position.y + 0.8, lightObj.position.z],
+              [0.0, 0.0, 0.0, 1.0],
+              [0.8, 0.7, 0.3, 1.0],
+              [0.6, 0.5, 0.2, 1.0]
+            );
+            scene.addLight(lanternLight);
+            lightObj.lightIndex = nextLightIndex;
+            nextLightIndex++;
+          }
         }
       }
     }
@@ -601,12 +763,14 @@ function updateSceneObjects() {
   const obstacleIds = new Set(obstacles.map(obs => obs.id));
   const trafficLightIds = new Set(trafficLights.map(light => light.id));
   const roadIds = new Set(roads.map(road => road.id));
+  const destinationIds = new Set(destinations.map(dest => dest.id));
   
   // Remove cars that have arrived at their destination
   scene.objects = scene.objects.filter(obj => {
     if (obstacleIds.has(obj.id)) return true;
     if (trafficLightIds.has(obj.id)) return true;
     if (roadIds.has(obj.id)) return true;
+    if (destinationIds.has(obj.id)) return true;
     if (obj.id < 0) return true;
     return currentAgentIds.has(obj.id);
   });
@@ -631,8 +795,13 @@ function updateSceneObjects() {
   // Update car positions and animations
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
-    
+
     if (existingObj) {
+      if (!existingObj.rotRad) {
+        const fallbackAngle = existingObj.rotY ?? directionToAngle(existingObj.currentDirection || "Down");
+        existingObj.rotRad = { x: 0, y: fallbackAngle, z: 0 };
+      }
+
       // Calculate current interpolated position
       let currentInterpolatedPos;
       if (existingObj.oldPosArray && existingObj.nextPosArray && existingObj.interpolateStart) {
@@ -669,9 +838,18 @@ function updateSceneObjects() {
         existingObj.animationStartTime = Date.now();
       } else if (!isMoving && existingObj.isMoving) {
         existingObj.isMoving = false;
-        existingObj.arrays = scene.baseHorseIdle.arrays;
-        existingObj.bufferInfo = scene.baseHorseIdle.bufferInfo;
-        existingObj.vao = scene.baseHorseIdle.vao;
+        // Usar el modelo IDLE del color correspondiente
+        let idleModel;
+        if (existingObj.horseColorType === 0) {
+          idleModel = scene.baseHorseIdleBrown;
+        } else if (existingObj.horseColorType === 1) {
+          idleModel = scene.baseHorseIdleWhite;
+        } else {
+          idleModel = scene.baseHorseIdleBlack;
+        }
+        existingObj.arrays = idleModel.arrays;
+        existingObj.bufferInfo = idleModel.bufferInfo;
+        existingObj.vao = idleModel.vao;
       }
       
       // Update animation frame if moving
@@ -682,73 +860,86 @@ function updateSceneObjects() {
         
         if (frameIndex !== existingObj.currentFrame) {
           existingObj.currentFrame = frameIndex;
-          const horseFrame = scene.baseHorseFrames[frameIndex];
+          // Usar los frames del color correspondiente
+          let horseFrames;
+          if (existingObj.horseColorType === 0) {
+            horseFrames = scene.baseHorseFramesBrown;
+          } else if (existingObj.horseColorType === 1) {
+            horseFrames = scene.baseHorseFramesWhite;
+          } else {
+            horseFrames = scene.baseHorseFramesBlack;
+          }
+          const horseFrame = horseFrames[frameIndex];
           existingObj.arrays = horseFrame.arrays;
           existingObj.bufferInfo = horseFrame.bufferInfo;
           existingObj.vao = horseFrame.vao;
         }
       }
 
-      // Update rotation based on direction change
-      const nextDirection = agent.dirActual || "Down";
-      if (existingObj.currentDirection !== nextDirection) {
-        const newAngle = directionToAngle(nextDirection);
-        
-        // Calculate current rotation angle
-        let currentAngle;
-        if (existingObj.oldRotY !== undefined && existingObj.rotateStart) {
-          const rotElapsed = Date.now() - existingObj.rotateStart;
-          const rotDuration = duration * 0.5;
-          const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
-          
-          if (rotFract < 1.0) {
-            currentAngle = lerp(existingObj.oldRotY, existingObj.rotY, rotFract);
-          } else {
-            currentAngle = existingObj.rotY;
-          }
-        } else {
-          currentAngle = existingObj.rotY !== undefined ? existingObj.rotY : existingObj.rotRad.y;
-        }
-        
-        // Normalize angles to [-π, π]
-        const normalizeAngle = (angle) => {
-          while (angle > Math.PI) angle -= 2 * Math.PI;
-          while (angle < -Math.PI) angle += 2 * Math.PI;
-          return angle;
-        };
-        
-        currentAngle = normalizeAngle(currentAngle);
-        const normalizedNew = normalizeAngle(newAngle);
-        
-        // Calculate shortest rotation path
-        let diff = normalizedNew - currentAngle;
-        if (diff > Math.PI) diff -= 2 * Math.PI;
-        if (diff < -Math.PI) diff += 2 * Math.PI;
-        
-        // Start rotation if angle difference is significant
-        if (Math.abs(diff) > 0.01) {
-          existingObj.oldRotY = currentAngle;
-          existingObj.rotY = currentAngle + diff;
-          existingObj.currentDirection = nextDirection;
-          existingObj.rotateStart = Date.now();
-        }
+      // Update rotation based on upcoming nextDir (not dirActual)
+      const upcomingDirection = agent.nextDir || agent.dirActual || "Down";
+      const targetAngle = directionToAngle(upcomingDirection);
+
+      // Calculate current rotation angle (consider ongoing interpolation)
+      let currentAngle;
+      if (existingObj.oldRotY !== undefined && existingObj.rotateStart) {
+        const rotElapsed = Date.now() - existingObj.rotateStart;
+        const rotDuration = duration * 0.5;
+        const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
+        currentAngle = rotFract < 1.0
+          ? lerp(existingObj.oldRotY, existingObj.rotY, rotFract)
+          : existingObj.rotY;
+      } else {
+        currentAngle = existingObj.rotY !== undefined ? existingObj.rotY : existingObj.rotRad.y;
+      }
+
+      // Normalize and shortest diff
+      const normalizeAngle = (angle) => {
+        while (angle > Math.PI) angle -= 2 * Math.PI;
+        while (angle < -Math.PI) angle += 2 * Math.PI;
+        return angle;
+      };
+      currentAngle = normalizeAngle(currentAngle);
+      const desired = normalizeAngle(targetAngle);
+      let diff = desired - currentAngle;
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < -Math.PI) diff += 2 * Math.PI;
+
+      // Start rotation when nextDir changes or angle differs
+      const upcomingChanged = existingObj.pendingDirection !== upcomingDirection;
+      if (upcomingChanged || Math.abs(diff) > 0.01) {
+        existingObj.pendingDirection = upcomingDirection;   // track upcoming
+        existingObj.oldRotY = currentAngle;                 // from current
+        existingObj.rotY = currentAngle + diff;             // to target
+        existingObj.rotateStart = Date.now();               // start interp
       }
     } else {
-      // New agent - initialize from scratch
-      agent.arrays = scene.baseHorseIdle.arrays;
-      agent.bufferInfo = scene.baseHorseIdle.bufferInfo;
-      agent.vao = scene.baseHorseIdle.vao;
+      // New agent
+      agent.horseColorType = Math.floor(Math.random() * 3);
+      
+      // Seleccionar modelo IDLE según color
+      let idleModel;
+      if (agent.horseColorType === 0) {
+        idleModel = scene.baseHorseIdleBrown;
+      } else if (agent.horseColorType === 1) {
+        idleModel = scene.baseHorseIdleWhite;
+      } else {
+        idleModel = scene.baseHorseIdleBlack;
+      }
+      
+      agent.arrays = idleModel.arrays;
+      agent.bufferInfo = idleModel.bufferInfo;
+      agent.vao = idleModel.vao;
       agent.scale = { x: 0.15, y: 0.15, z: 0.15 };
       
-      agent.color = getRandomCarColor();
-      
-      const initialDirection = agent.dirActual || "Down";
+      const initialDirection = agent.nextDir || agent.dirActual || "Down";
       agent.currentDirection = initialDirection;
       const initialAngle = directionToAngle(initialDirection);
-      
-      agent.rotRad = { x: 0, y: initialAngle, z: 0 };
+
+      agent.rotRad = agent.rotRad || { x: 0, y: initialAngle, z: 0 };
       agent.oldRotY = initialAngle;
       agent.rotY = initialAngle;
+      agent.pendingDirection = initialDirection;
       
       const initialPos = [agent.position.x, agent.position.y + 0.3, agent.position.z];
       agent.oldPosArray = initialPos;
@@ -765,7 +956,7 @@ function updateSceneObjects() {
 }
 
 /**
- * Renders a single object with smooth interpolation and rotation
+ * Render one object with interpolation and rotation
  * @param {WebGL2RenderingContext} gl - WebGL context
  * @param {Object} programInfo - Shader program information
  * @param {Object3D} object - The object to render
@@ -804,39 +995,52 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
     v3_tra = object.posArray;
   }
 
-  // Calculate rotation with smooth interpolation
-  let rotY = object.rotRad?.y || 0;
-  
+  // Ensure rotation container exists
+  if (!object.rotRad) {
+    object.rotRad = { x: 0, y: object.rotY ?? 0, z: 0 };
+  }
+
+  // Interpolate rotation toward target
+  let rotY = object.rotRad.y || 0;
   if (object.oldRotY !== undefined && object.rotY !== undefined && object.rotateStart) {
     const rotDuration = duration * 0.5;
     const rotElapsed = Date.now() - object.rotateStart;
     const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
-    
-    // Apply easing function for smooth rotation
-    const easedFract = rotFract < 0.5 
-      ? 2 * rotFract * rotFract 
+    const easedFract = rotFract < 0.5
+      ? 2 * rotFract * rotFract
       : 1 - Math.pow(-2 * rotFract + 2, 2) / 2;
-    
+
     rotY = lerp(object.oldRotY, object.rotY, easedFract);
-    
+
+    // Finish rotation
     if (rotFract >= 1.0) {
       rotY = object.rotY;
-      object.rotRad.y = object.rotY; 
+      object.rotRad.y = rotY;
+      if (object.pendingDirection) {
+        object.currentDirection = object.pendingDirection; // commit after turn
+        delete object.pendingDirection;
+      }
       delete object.oldRotY;
       delete object.rotateStart;
     }
   } else if (object.rotY !== undefined) {
     rotY = object.rotY;
-    object.rotRad.y = rotY; 
+    object.rotRad.y = rotY;
   }
 
+  // Ensure scale exists
   let v3_sca = object.scaArray;
+  if (!v3_sca) {
+    const sc = object.scale || { x: 1, y: 1, z: 1 };
+    v3_sca = [sc.x, sc.y, sc.z];
+    object.scaArray = v3_sca;
+  }
 
   // Build transformation matrix
   const scaMat = M4.scale(v3_sca);
-  const rotXMat = M4.rotationX(object.rotRad.x);
+  const rotXMat = M4.rotationX(object.rotRad.x || 0);
   const rotYMat = M4.rotationY(rotY);
-  const rotZMat = M4.rotationZ(object.rotRad.z);
+  const rotZMat = M4.rotationZ(object.rotRad.z || 0);
   const traMat = M4.translation(v3_tra);
   
   let transforms = M4.identity();
@@ -867,7 +1071,7 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
 }
 
 /**
- * Main rendering loop
+ * Main render loop
  * Handles animation timing, camera updates, and triggers background updates
  */
 async function drawScene() {
@@ -896,18 +1100,86 @@ async function drawScene() {
   // Switch to Phong shader for objects
   gl.useProgram(phongProgramInfo.program);
 
-  // Set global lighting uniforms
-  let globalUniforms = {
-    u_viewWorldPosition: scene.camera.posArray,
-    u_lightWorldPosition: scene.lights[0].posArray,
-    u_ambientLight: scene.lights[0].ambient,
-    u_diffuseLight: scene.lights[0].diffuse,
-    u_specularLight: scene.lights[0].specular,
+  // Draw the moon with special shader and texture
+  const moon = scene.objects.find(obj => obj.id === -10000);
+  if (moon) {
+    gl.useProgram(moonProgramInfo.program);
+    
+    // Set light uniforms for moon (emissive)
+    const moonLightUniforms = {
+      u_viewWorldPosition: scene.camera.posArray,
+      u_lightWorldPosition: scene.lights[0].posArray,
+      u_ambientLight: scene.lights[0].ambient,
+      u_diffuseLight: scene.lights[0].diffuse,
+      u_specularLight: scene.lights[0].specular,
+      u_texture: moonTexture,
+      u_emissive: 0.6, // La luna emite luz propia (60% de brillo)
+    };
+    twgl.setUniforms(moonProgramInfo, moonLightUniforms);
+    drawObject(gl, moonProgramInfo, moon, viewProjectionMatrix, fract);
   }
-  twgl.setUniforms(phongProgramInfo, globalUniforms);
-
-  // Draw all scene objects
+  
+  // Switch back to phong program for other objects
+  gl.useProgram(phongProgramInfo.program);
+  
+  // Draw the objects
   for (let object of scene.objects) {
+    // Skip moon since we already drew it
+    if (object.id === -10000) continue;
+    // Encontrar la linterna encendida más cercana (si existe)
+    let closestLantern = null;
+    let closestDistance = Infinity;
+    
+    for (let i = 1; i < scene.lights.length; i++) { // Empezar desde 1 (saltar luz global)
+      const light = scene.lights[i];
+      const dx = light.posArray[0] - object.position.x;
+      const dy = light.posArray[1] - object.position.y;
+      const dz = light.posArray[2] - object.position.z;
+      const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      
+      // Solo considerar luces activas (amarillas) y dentro del radio
+      if (distance < closestDistance && distance < 5.0 && 
+          light.diffuse[0] > 0) { // Verificar que la luz esté "encendida"
+        closestDistance = distance;
+        closestLantern = light;
+      }
+    }
+    
+    // Configurar uniforms para este objeto
+    if (closestLantern) {
+      // Hay una linterna cerca: usar su posición como fuente de luz principal
+      const attenuation = Math.max(0, 1.0 - (closestDistance / 5.0)); // Fade out con distancia
+      
+      let lanternUniforms = {
+        u_viewWorldPosition: scene.camera.posArray,
+        u_lightWorldPosition: closestLantern.posArray, // Usar posición de la linterna
+        u_ambientLight: scene.lights[0].ambient, // Ambiente lunar tenue
+        u_diffuseLight: [
+          scene.lights[0].diffuse[0] + closestLantern.diffuse[0] * attenuation * 3.5,
+          scene.lights[0].diffuse[1] + closestLantern.diffuse[1] * attenuation * 3.5,
+          scene.lights[0].diffuse[2] + closestLantern.diffuse[2] * attenuation * 3.0,
+          1.0
+        ],
+        u_specularLight: [
+          closestLantern.specular[0] * attenuation * 2.5,
+          closestLantern.specular[1] * attenuation * 2.5,
+          closestLantern.specular[2] * attenuation * 2.0,
+          1.0
+        ],
+      };
+      twgl.setUniforms(phongProgramInfo, lanternUniforms);
+    } else {
+      // No hay linterna cerca: usar solo luz global tenue (ambiente nocturno)
+      let globalUniforms = {
+        u_viewWorldPosition: scene.camera.posArray,
+        u_lightWorldPosition: scene.lights[0].posArray,
+        u_ambientLight: scene.lights[0].ambient,
+        u_diffuseLight: scene.lights[0].diffuse,
+        u_specularLight: scene.lights[0].specular,
+      };
+      twgl.setUniforms(phongProgramInfo, globalUniforms);
+    }
+    
     drawObject(gl, phongProgramInfo, object, viewProjectionMatrix, fract);
   }
 

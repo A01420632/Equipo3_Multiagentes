@@ -114,7 +114,9 @@ class CityModel(Model):
                     # Create appropriate agent based on map symbol
                     if col in ["v", "^", ">", "<"]:
                         # Directional road
-                        agent = Road(self, cell, self.getUniqueId(), dataDictionary[col])
+                        agent = Road(self, cell, self.getUniqueId(), dataDictionary[col], is_decorative_road=False)
+                    elif col == "R":
+                        agent = Road(self, cell, self.getUniqueId(), "Left", is_decorative_road=True)
                         self.roads.append(agent)
                     elif col in ["S", "s"]:
                         # Traffic light (S=slow cycle, s=fast cycle)
@@ -128,9 +130,10 @@ class CityModel(Model):
                         self.traffic_lights.append(agent)
                     elif col == "#":
                         # Obstacle (building)
-                        agent = Obstacle(self, cell, self.getUniqueId())
+                        agent = Obstacle(self, cell, self.getUniqueId(), is_tree=False)
+                    elif col == "T":
+                        agent = Obstacle(self, cell, self.getUniqueId(), is_tree=True)
                     elif col == "D":
-                        # Destination point
                         agent = Destination(self, cell, self.getUniqueId())
                         self.destinations.append(agent) 
         
@@ -493,14 +496,7 @@ class CityModel(Model):
                 self.carsSpawnedThisStep += 1
 
     def step(self):
-        """
-        Advance the simulation by one step.
-        
-        Handles car spawning on spawn cycles, executes all agent steps,
-        collects metrics, and checks termination condition (when no cars
-        can be spawned).
-        """
-        # Reset per-step metrics
+        """Advance the simulation by one step."""
         self.cars_arrived_this_step = 0
         self.traffic_jams_this_step = 0
         
@@ -522,4 +518,17 @@ class CityModel(Model):
         carsBefore = self.countActiveCars(self)
         embotellamientosBefore = self.embotellamientos
         
-        # Execute all agent steps in random
+        self.agents.shuffle_do("step")
+        
+        # Calculate metrics
+        carsAfter = self.countActiveCars(self)
+        self.cars_arrived_this_step = carsBefore - carsAfter
+        self.traffic_jams_this_step = self.embotellamientos - embotellamientosBefore
+        
+        # Collect data
+        self.datacollector.collect(self)
+
+    @staticmethod
+    def countActiveCars(model):
+        """Count active cars in the simulation"""
+        return len(model.agents.select(lambda x: isinstance(x, Car)))

@@ -49,52 +49,60 @@ async function initAgentsModel() {
  * Retrieves the current positions of all agents from the agent server.
  */
 async function getCars() {
-    try {
-        let response = await fetch(agent_server_uri + "getCars");
+  try {
+    const res = await fetch(agent_server_uri + "getCars", { cache: "no-store" });
+    if (!res.ok) return;
+    const data = await res.json();
+    const positions = Array.isArray(data.positions) ? data.positions : [];
 
-        if (response.ok) {
-            let result = await response.json();
-            const serverAgentIds = new Set(result.positions.map(agent => agent.id));
-            
-            for (let i = agents.length - 1; i >= 0; i--) {
-                if (!serverAgentIds.has(agents[i].id)) {
-                    agents.splice(i, 1);
-                }
-            }
-
-            for (const agent of result.positions) {
-                const current_agent = agents.find((object3d) => object3d.id == agent.id);
-
-                if(current_agent != undefined){
-                    // ✅ SOLO actualizar dirección, NO rotation
-                    current_agent.dirActual = agent.dirActual;
-                    current_agent.nextDir = agent.nextDir;
-                    
-                    // ✅ REMOVER esta línea que causa conflictos
-                    // current_agent.rotation = { ... };
-                    
-                    current_agent.position = {x: agent.x, y: agent.y, z: agent.z};
-                } else {
-                    const newCar = new Object3D(agent.id, [agent.x, agent.y, agent.z]);
-                    newCar.dirActual = agent.dirActual;
-                    newCar.nextDir = agent.nextDir;
-                    
-                    // ✅ Para nuevo carro, inicializar rotación correctamente
-                    const initialAngle = directionToAngle(agent.dirActual || "Down");
-                    newCar.rotRad = { x: 0, y: initialAngle, z: 0 };
-                    newCar.rotY = initialAngle;
-                    newCar.oldRotY = initialAngle;
-                    
-                    newCar.oldPosArray = [...newCar.posArray];
-                    
-                    agents.push(newCar);
-                }
-            }
-        }
-
-    } catch (error) {
-        console.log(error);
+    const serverIds = new Set(positions.map(p => String(p.id)));
+    // Remove local agents not on server
+    for (let i = agents.length - 1; i >= 0; i--) {
+      if (!serverIds.has(String(agents[i].id))) agents.splice(i, 1);
     }
+
+    const byId = new Map(agents.map(a => [String(a.id), a]));
+
+    for (const p of positions) {
+      const id = String(p.id);
+      const x = Number.isFinite(p.x) ? p.x : 0;
+      const y = Number.isFinite(p.y) ? p.y : 1;
+      const z = Number.isFinite(p.z) ? p.z : 0;
+      const dirActual = p.dirActual || "Down";
+      const nextDir = p.nextDir || dirActual;
+
+      let obj = byId.get(id);
+      if (obj) {
+        // Large jump? Reset interpolation to avoid rubber-banding
+        const dx = Math.abs((obj.position?.x ?? x) - x);
+        const dz = Math.abs((obj.position?.z ?? z) - z);
+        const bigJump = dx + dz > 4;
+
+        obj.position = { x, y, z };
+        obj.posArray = [x, y, z];
+        obj.dirActual = dirActual;
+        obj.nextDir = nextDir;
+
+        if (bigJump) {
+          // Clear interpolation so renderer snaps cleanly
+          delete obj.oldPosArray;
+          delete obj.nextPosArray;
+          delete obj.interpolateStart;
+        }
+      } else {
+        agents.push({
+          id,
+          position: { x, y, z },
+          posArray: [x, y, z],
+          dirActual,
+          nextDir,
+          scale: { x: 0.15, y: 0.15, z: 0.15 },
+        });
+      }
+    }
+  } catch (e) {
+    console.error("getCars error:", e);
+  }
 }
 
 function directionToAngle(direction) {
@@ -151,6 +159,8 @@ async function getObstacles() {
 
             for (const obstacle of result.positions) {
                 const newObstacle = new Object3D(obstacle.id, [obstacle.x, obstacle.y, obstacle.z]);
+                newObstacle.serverRotation = obstacle.rotation || 0;
+                newObstacle.is_tree = obstacle.is_tree || false;
                 obstacles.push(newObstacle);
             }
             
@@ -172,6 +182,7 @@ async function getDestination() {
 
             for (const destination of result.positions) {
                 const newDestination = new Object3D(destination.id, [destination.x, destination.y, destination.z]);
+                newDestination.serverRotation = destination.rotation || 0;
                 destinations.push(newDestination);
             }
         }

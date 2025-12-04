@@ -1,12 +1,15 @@
 /*
- * Base program for a 3D scene that connects to an API to get the movement
- * of agents.
- * The scene shows colored cubes
- *
- * Gilberto Echeverria
- * 2025-11-08
+ * Traffic Simulation Visualization
+ * Authors: Mauricio Monroy, Diego De la Vega
+ * 
+ * Purpose: 3D visualization of a multi-agent traffic simulation system.
+ * This file handles the WebGL rendering of cars (horses), buildings, traffic lights,
+ * roads, and destinations. It connects to a Python Flask API to retrieve agent
+ * positions and states, then animates them in real-time using smooth interpolation
+ * and rotation transitions.
+ * 
+ * Date: December 2025
  */
-
 
 'use strict';
 
@@ -19,27 +22,27 @@ import { Light3D } from '../libs/light3d';
 import { Camera3D } from '../libs/camera3d';
 import { loadMtl } from '../libs/obj_loader';
 
-// Functions and arrays for the communication with the API
+// Import functions for API communication
 import {
   agents, obstacles, trafficLights, roads, destinations, initAgentsModel,
   update, getCars, getLights, getDestination, getRoads, getObstacles
 } from '../libs/api_connection.js';
 
-// Importar shaders de Phong
+// Import Phong shading shaders
 import vsGLSL from '../assets/shaders/vs_phong_301.glsl?raw';
 import fsGLSL from '../assets/shaders/fs_phong_301.glsl?raw';
 
-// Importar shaders de color (renombrados)
+// Import color shaders
 import vsColorGLSL from '../assets/shaders/vs_color.glsl?raw';
 import fsColorGLSL from '../assets/shaders/fs_color.glsl?raw';
 
-// Importar shaders de skybox
+// Import skybox shaders
 import vsSkyboxGLSL from '../assets/shaders/vs_skybox.glsl?raw';
 import fsSkyboxGLSL from '../assets/shaders/fs_skybox.glsl?raw';
 
 const scene = new Scene3D();
 
-// Global variables
+// Global variables for WebGL program management
 let phongProgramInfo = undefined;
 let colorProgramInfo = undefined;
 let skyboxProgramInfo = undefined;
@@ -47,26 +50,29 @@ let skyboxBufferInfo = undefined;
 let skyboxVAO = undefined;
 let skyboxTexture = undefined;
 let gl = undefined;
-const duration = 1000; // ms
+
+// Animation timing constants
+const duration = 1000; // Duration of one animation cycle in milliseconds
 let elapsed = 0;
 let then = 0;
 
+// Update synchronization flags
 let isUpdating = false;
 let pendingUpdate = false;
 
-// Global variables for OBJ models
+// Global variables for 3D model data
 let carObjData = null;
 let buildingObjData = null;
 let trafficLightObjData = null;
 let roadObjData = null;
 let destinationObjData = null;
 
-// Variables para animación del caballo
-let horseAnimationFrames = []; // Array con los 4 frames de animación
-let horseIdleObjData = null;   // Frame IDLE
-let horseMaterials = null;     // Materiales compartidos
+// Horse animation frame data
+let horseAnimationFrames = []; // Array containing 4 animation frames
+let horseIdleObjData = null;   // Idle frame when horse is not moving
+let horseMaterials = null;     // Shared materials for all horse frames
 
-// Global variables for MTL materials
+// Material data for different objects
 let carMaterials = null;
 let buildingMaterials = null;
 let trafficLightMaterials = null;
@@ -74,29 +80,49 @@ let trafficLightMaterialsG = null;
 let roadMaterials = null;
 let destinationMaterials = null;
 
-let angulobase = Math.PI;//-Math.PI / 2;
+// Direction angle mapping for car rotation
+let angulobase = Math.PI;
 const DIRECTION_ANGLES = {
-  "Right": -Math.PI / 2 + angulobase, // -90° (apunta hacia +X)
-  "Left": Math.PI / 2 + angulobase, // 90° (apunta hacia -X)
-  "Up": Math.PI + angulobase, // 180° (apunta hacia +Z) 
-  "Down": 0 + angulobase // 0° (apunta hacia -Z)
+  "Right": -Math.PI / 2 + angulobase,  // Points towards +X
+  "Left": Math.PI / 2 + angulobase,    // Points towards -X
+  "Up": Math.PI + angulobase,          // Points towards +Z
+  "Down": 0 + angulobase               // Points towards -Z
 };
 
-// Helpers para interpotlacion
+/**
+ * Linear interpolation helper function
+ * @param {number} a - Start value
+ * @param {number} b - End value
+ * @param {number} t - Interpolation factor (0 to 1)
+ * @returns {number} Interpolated value
+ */
 function lerp(a, b, t) { 
   return a + (b - a) * t; 
 }
-function clamp(x, min, max) { return Math.max(min, Math.min(max, x)); } // restringe movimiento a rango permitido
 
+/**
+ * Clamps a value within a specified range
+ * @param {number} x - Value to clamp
+ * @param {number} min - Minimum bound
+ * @param {number} max - Maximum bound
+ * @returns {number} Clamped value
+ */
+function clamp(x, min, max) { 
+  return Math.max(min, Math.min(max, x)); 
+}
 
-// Function to load OBJ files with optional MTL
+/**
+ * Loads an OBJ file and its associated MTL material file
+ * @param {string} url - Path to the OBJ file
+ * @returns {Object|null} Object containing objData and materials, or null if loading fails
+ */
 async function loadObjFile(url) {
   try {
     const response = await fetch(url);
     const text = await response.text();
     console.log(`Successfully loaded OBJ from ${url}`);
     
-    // Try to load corresponding MTL file
+    // Attempt to load corresponding MTL file
     const mtlUrl = url.replace('.obj', '.mtl');
     let materials = null;
     
@@ -118,32 +144,37 @@ async function loadObjFile(url) {
   }
 }
 
+/**
+ * Main initialization function
+ * Sets up WebGL context, loads all 3D models, initializes the agent model,
+ * and starts the rendering loop
+ */
 async function main() {
-  // Setup the canvas area
+  // Setup WebGL canvas and context
   const canvas = document.querySelector('canvas');
   gl = canvas.getContext('webgl2');
   twgl.resizeCanvasToDisplaySize(gl.canvas);
   gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
 
+  // Create shader programs
   phongProgramInfo = twgl.createProgramInfo(gl, [vsGLSL, fsGLSL]);
-  // Prepare the program with the shaders
   colorProgramInfo = twgl.createProgramInfo(gl, [vsColorGLSL, fsColorGLSL]);
   skyboxProgramInfo = twgl.createProgramInfo(gl, [vsSkyboxGLSL, fsSkyboxGLSL]);
 
-  // Setup skybox
+  // Setup skybox environment
   setupSkybox();
 
-  // Load OBJ models from assets folder
+  // Load all 3D models from assets folder
   console.log('Loading OBJ models...');
   
-  // Cargar frames de animación del caballo
+  // Load horse animation frames (4 frames for walking animation)
   const horse1Data = await loadObjFile('../assets/models/Horse1.obj');
   const horse2Data = await loadObjFile('../assets/models/Horse2.obj');
   const horse3Data = await loadObjFile('../assets/models/Horse3.obj');
   const horse4Data = await loadObjFile('../assets/models/Horse4.obj');
   const horseIdleData = await loadObjFile('../assets/models/HorseIdle.obj');
   
-  // Guardar los frames de animación
+  // Store animation frames
   horseAnimationFrames = [
     horse1Data ? horse1Data.objData : null,
     horse2Data ? horse2Data.objData : null,
@@ -154,9 +185,10 @@ async function main() {
   horseIdleObjData = horseIdleData ? horseIdleData.objData : null;
   horseMaterials = horse1Data ? horse1Data.materials : null;
   
+  // Load environment models
   const buildingData = await loadObjFile('../assets/models/House.obj');
-  const trafficLightData = await loadObjFile('../assets/models/Lantern.obj'); //Semaforo -> Tambien cambiar escala
-  const trafficLightDataGreen = await loadObjFile('../assets/models/LanternOn.obj'); //SemaforoVerde
+  const trafficLightData = await loadObjFile('../assets/models/Lantern.obj');
+  const trafficLightDataGreen = await loadObjFile('../assets/models/LanternOn.obj');
   const roadData = await loadObjFile('../assets/models/Road.obj');
   const destinationData = await loadObjFile('../assets/models/Stable.obj');
   
@@ -174,57 +206,69 @@ async function main() {
   
   console.log('OBJ models and materials loaded');
 
-  // Initialize the agents model
+  // Initialize the agents model via API
   await initAgentsModel();
 
-  // Get the agents and obstacles
+  // Fetch initial agent data from server
   await getCars();
   await getLights();
   await getDestination();
   await getObstacles();
   await getRoads();
 
-
-  // Initialize the scene
+  // Initialize the 3D scene
   setupScene();
 
-  // Position the objects in the scene
+  // Position and configure objects in the scene
   setupObjects(scene, gl, phongProgramInfo);
 
-  // Prepare the user interface
+  // Prepare user interface controls
   setupUI();
 
-  // Fisrt call to the drawing loop
+  // Start the rendering loop
   drawScene();
 }
 
-
-
+/**
+ * Configures the 3D scene camera and lighting
+ */
 function setupScene() {
+  // Create and position camera with orbital controls
   let camera = new Camera3D(0,
     10,             // Distance to target
-    4,              // Azimut
-    0.8,              // Elevation
-    [0, 0, 10],
-    [0, 0, 0]);
-  // These values are empirical.
-  // Maybe find a better way to determine them
+    4,              // Azimuth angle
+    0.8,            // Elevation angle
+    [0, 0, 10],     // Initial position
+    [0, 0, 0]);     // Look-at target
+  
   camera.panOffset = [0, 8, 0];
   scene.setCamera(camera);
   scene.camera.setupControls();
 
+  // Create main scene light
   let light = new Light3D(0, 
-    [3, 3, 5], // Position
-    [0.3, 0.3, 0.3, 1.0],// Ambient
-    [1.0, 1.0, 1.0, 1.0],  // Diffuse
-    [1.0, 1.0, 1.0, 1.0]); // Specular
+    [3, 3, 5],                  // Light position
+    [0.3, 0.3, 0.3, 1.0],      // Ambient color
+    [1.0, 1.0, 1.0, 1.0],      // Diffuse color
+    [1.0, 1.0, 1.0, 1.0]);     // Specular color
   scene.addLight(light);
 }
 
+/**
+ * Converts a direction string to its corresponding rotation angle
+ * @param {string} direction - Direction string (Right, Left, Up, Down)
+ * @returns {number} Rotation angle in radians
+ */
 function directionToAngle(direction) {
   return DIRECTION_ANGLES[direction] || 0;
 }
 
+/**
+ * Calculates the shortest angular difference between two angles
+ * @param {number} from - Starting angle in radians
+ * @param {number} to - Target angle in radians
+ * @returns {number} Shortest angle difference in radians
+ */
 function angleDifference(from, to) {
   const normalizeAngle = (angle) => {
     while (angle > Math.PI) angle -= 2 * Math.PI;
@@ -243,24 +287,35 @@ function angleDifference(from, to) {
   return diff;
 }
 
+/**
+ * Generates a random color for car visualization
+ * @returns {Array<number>} RGB color array [r, g, b, a]
+ */
 function getRandomCarColor() {
   const colors = [
-    [1.0, 0.0, 0.0, 1.0],  // Rojo
-    [0.0, 0.0, 1.0],  // Azul
-    [1.0, 1.0, 0.0],  // Amarillo
-    [0.0, 1.0, 0.0],  // Verde
-    [1.0, 0.5, 0.0],  // Naranja
-    [0.5, 0.0, 0.5],  // Púrpura
-    [0.0, 1.0, 1.0],  // Cian
-    [1.0, 1.0, 1.0],  // Blanco
-    [0.2, 0.2, 0.2],  // Negro
-    [0.7, 0.7, 0.7],  // Gris
+    [1.0, 0.0, 0.0, 1.0],  // Red
+    [0.0, 0.0, 1.0],       // Blue
+    [1.0, 1.0, 0.0],       // Yellow
+    [0.0, 1.0, 0.0],       // Green
+    [1.0, 0.5, 0.0],       // Orange
+    [0.5, 0.0, 0.5],       // Purple
+    [0.0, 1.0, 1.0],       // Cyan
+    [1.0, 1.0, 1.0],       // White
+    [0.2, 0.2, 0.2],       // Black
+    [0.7, 0.7, 0.7],       // Gray
   ];
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+/**
+ * Creates and configures all scene objects (cars, buildings, roads, etc.)
+ * Sets up VAOs (Vertex Array Objects) for efficient rendering
+ * @param {Scene3D} scene - The 3D scene object
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Object} programInfo - Shader program information
+ */
 function setupObjects(scene, gl, programInfo) {
-  // Create VAOs for the different shapes
+  // Create base cube for fallback rendering
   const baseCube = new Object3D(-1);
   baseCube.prepareVAO(gl, programInfo);
 
@@ -270,23 +325,21 @@ function setupObjects(scene, gl, programInfo) {
     const horseFrame = new Object3D(-100 - i, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
     if (horseAnimationFrames[i]) {
       horseFrame.prepareVAO(gl, programInfo, horseAnimationFrames[i], horseMaterials);
-      // console.log(`Horse animation frame ${i + 1} loaded successfully`);
     } else {
       horseFrame.prepareVAO(gl, programInfo);
     }
     baseHorseFrames.push(horseFrame);
   }
   
-  // Create horse IDLE frame
+  // Create horse IDLE frame for stationary cars
   const baseHorseIdle = new Object3D(-110, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], false);
   if (horseIdleObjData) {
     baseHorseIdle.prepareVAO(gl, programInfo, horseIdleObjData, horseMaterials);
-    // console.log('Horse IDLE model loaded successfully');
   } else {
     baseHorseIdle.prepareVAO(gl, programInfo);
   }
 
-  // Create building model from OBJ (invertir caras)
+  // Create building model (with inverted faces for proper rendering)
   const baseBuilding = new Object3D(-3, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (buildingObjData) {
     baseBuilding.prepareVAO(gl, programInfo, buildingObjData, buildingMaterials);
@@ -296,7 +349,7 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for buildings');
   }
 
-  // Create traffic light model from OBJ (rojo)
+  // Create traffic light model (red state)
   const baseTrafficLight = new Object3D(-4);
   if (trafficLightObjData) {
     baseTrafficLight.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterials);
@@ -306,7 +359,7 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for traffic lights');
   }
 
-  // Create traffic light model (verde)
+  // Create traffic light model (green state)
   const baseTrafficLightGreen = new Object3D(-6);
   if (trafficLightObjData) {
     baseTrafficLightGreen.prepareVAO(gl, programInfo, trafficLightObjData, trafficLightMaterialsG);
@@ -316,7 +369,7 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for green traffic lights');
   }
 
-  // Create road model from OBJ
+  // Create road model
   const baseRoad = new Object3D(-5, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (roadObjData) {
     baseRoad.prepareVAO(gl, programInfo, roadObjData, roadMaterials);
@@ -325,6 +378,8 @@ function setupObjects(scene, gl, programInfo) {
     baseRoad.prepareVAO(gl, programInfo);
     console.log('Using default cube for roads');
   }
+  
+  // Create destination model
   const baseDestination = new Object3D(-7, [0,0,0], [0,0,0], [1,1,1], [1,1,1,1], true);
   if (destinationObjData) {
     baseDestination.prepareVAO(gl, programInfo, destinationObjData, destinationMaterials);
@@ -334,7 +389,7 @@ function setupObjects(scene, gl, programInfo) {
     console.log('Using default cube for destinations');
   }
 
-  // Store the base models for later use
+  // Store base models in scene for later reference
   scene.baseCube = baseCube;
   scene.baseHorseFrames = baseHorseFrames;
   scene.baseHorseIdle = baseHorseIdle;
@@ -344,9 +399,8 @@ function setupObjects(scene, gl, programInfo) {
   scene.baseRoad = baseRoad;
   scene.baseDestination = baseDestination;
 
-  // Setup horses with IDLE model
+  // Initialize all car agents with IDLE model
   for (const agent of agents) {
-    // Inicializar con frame IDLE
     agent.arrays = baseHorseIdle.arrays;
     agent.bufferInfo = baseHorseIdle.bufferInfo;
     agent.vao = baseHorseIdle.vao;
@@ -363,7 +417,7 @@ function setupObjects(scene, gl, programInfo) {
     agent.oldPosArray = [...agent.posArray];
     agent.oldPosArray[1] += 0.3;
     
-    // Variables para animación
+    // Initialize animation state
     agent.currentFrame = 0;
     agent.isMoving = false;
     agent.animationStartTime = Date.now();
@@ -376,28 +430,28 @@ function setupObjects(scene, gl, programInfo) {
     agent.arrays = baseBuilding.arrays;
     agent.bufferInfo = baseBuilding.bufferInfo;
     agent.vao = baseBuilding.vao;
-    agent.scale = { x: 0.2, y: 0.4, z: 0.2 }; //{ x: 0.03, y: 0.05, z: 0.03 }
+    agent.scale = { x: 0.2, y: 0.4, z: 0.2 };
     agent.color = [0.7, 0.7, 0.7, 1.0];
-    agent.position.y += 0.3; // Elevar edificios sobre las calles
+    agent.position.y += 0.3; // Elevate buildings above streets
     scene.addObject(agent);
   }
 
-  // Setup traffic lights with traffic light model (default: verde)
+  // Setup traffic lights (default: green state)
   for (const light of trafficLights) {
     light.arrays = baseTrafficLightGreen.arrays;
     light.bufferInfo = baseTrafficLightGreen.bufferInfo;
     light.vao = baseTrafficLightGreen.vao;
-    light.scale = { x: 0.2, y: 0.2, z: 0.2 }; //Semaforos: { x: 0.1, y: 0.1, z: 0.1 };
+    light.scale = { x: 0.2, y: 0.2, z: 0.2 };
     
     const isGreen = light.state === true || light.state === "True" || light.state === "true";
     light.color = isGreen ? [0.0, 1.0, 0.0, 1.0] : [1.0, 0.0, 0.0, 1.0];
-    light.state = light.state || true; // Default verde
-    light.position.y += 0.3; // Elevar semáforos sobre las calles
+    light.state = light.state || true;
+    light.position.y += 0.3; // Elevate traffic lights above streets
     
     scene.addObject(light);
   }
 
-  // Setup roads with road model
+  // Setup roads
   for (const road of roads) {
     road.arrays = baseRoad.arrays;
     road.bufferInfo = baseRoad.bufferInfo;
@@ -410,15 +464,16 @@ function setupObjects(scene, gl, programInfo) {
       if (firstMaterial && firstMaterial.Kd) {
         road.color = [...firstMaterial.Kd, 1.0];
       } else {
-        road.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+        road.color = [0.5, 0.5, 0.5, 0.5];
       }
     } else {
-      road.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+      road.color = [0.5, 0.5, 0.5, 0.5];
     }
     
     scene.addObject(road);
   }
-  // Setup destinations with destination model
+  
+  // Setup destinations
   for (const dest of destinations) {
     dest.arrays = baseDestination.arrays;
     dest.bufferInfo = baseDestination.bufferInfo;
@@ -431,16 +486,16 @@ function setupObjects(scene, gl, programInfo) {
       if (firstMaterial && firstMaterial.Kd) {
         dest.color = [...firstMaterial.Kd, 1.0];
       } else {
-        dest.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+        dest.color = [0.5, 0.5, 0.5, 0.5];
       }
     } else {
-      dest.color = [0.5, 0.5, 0.5, 0.5]; // Gris oscuro fallback
+      dest.color = [0.5, 0.5, 0.5, 0.5];
     }
     
     scene.addObject(dest);
   }
   
-  // Agregar calles debajo de edificios
+  // Add roads beneath buildings for complete street coverage
   let roadIdCounter = -1000;
   for (const building of obstacles) {
     const buildingRoad = new Object3D(roadIdCounter--);
@@ -448,7 +503,7 @@ function setupObjects(scene, gl, programInfo) {
     buildingRoad.bufferInfo = baseRoad.bufferInfo;
     buildingRoad.vao = baseRoad.vao;
     buildingRoad.position.x = building.position.x;
-    buildingRoad.position.y = building.position.y - 0.3; // Posición original antes de elevar el edificio
+    buildingRoad.position.y = building.position.y - 0.3;
     buildingRoad.position.z = building.position.z;
     buildingRoad.scale = { x: 0.6, y: 0.6, z: 0.6 };
     
@@ -462,14 +517,14 @@ function setupObjects(scene, gl, programInfo) {
     scene.addObject(buildingRoad);
   }
   
-  // Agregar calles debajo de semáforos
+  // Add roads beneath traffic lights
   for (const light of trafficLights) {
     const lightRoad = new Object3D(roadIdCounter--);
     lightRoad.arrays = baseRoad.arrays;
     lightRoad.bufferInfo = baseRoad.bufferInfo;
     lightRoad.vao = baseRoad.vao;
     lightRoad.position.x = light.position.x;
-    lightRoad.position.y = light.position.y - 0.3; // Posición original antes de elevar el semáforo
+    lightRoad.position.y = light.position.y - 0.3;
     lightRoad.position.z = light.position.z;
     lightRoad.scale = { x: 0.6, y: 0.6, z: 0.6 };
     
@@ -483,7 +538,7 @@ function setupObjects(scene, gl, programInfo) {
     scene.addObject(lightRoad);
   }
   
-  // Agregar calles debajo de destinos
+  // Add roads beneath destinations
   for (const dest of destinations) {
     const destRoad = new Object3D(roadIdCounter--);
     destRoad.arrays = baseRoad.arrays;
@@ -504,12 +559,15 @@ function setupObjects(scene, gl, programInfo) {
     scene.addObject(destRoad);
   }
   
-  // Elevar destinos sobre las calles
+  // Elevate destinations above streets
   for (const dest of destinations) {
     dest.position.y += 0.3;
   }
 }
 
+/**
+ * Fetches updated traffic light states from the server and updates their colors
+ */
 async function updateTrafficLights() {
   try {
     let response = await fetch("http://localhost:8585/getLights");
@@ -532,12 +590,19 @@ async function updateTrafficLights() {
   }
 }
 
+/**
+ * Updates scene objects based on new data from the server
+ * Handles adding new cars, removing arrived cars, updating positions,
+ * and managing animation states
+ */
 function updateSceneObjects() {
+  // Get current agent IDs for filtering
   const currentAgentIds = new Set(agents.map(agent => agent.id));
   const obstacleIds = new Set(obstacles.map(obs => obs.id));
   const trafficLightIds = new Set(trafficLights.map(light => light.id));
   const roadIds = new Set(roads.map(road => road.id));
   
+  // Remove cars that have arrived at their destination
   scene.objects = scene.objects.filter(obj => {
     if (obstacleIds.has(obj.id)) return true;
     if (trafficLightIds.has(obj.id)) return true;
@@ -546,7 +611,7 @@ function updateSceneObjects() {
     return currentAgentIds.has(obj.id);
   });
   
-  // Actualizar VAO de semáforos según su estado
+  // Update traffic light VAOs based on their state
   for (const light of trafficLights) {
     const sceneLight = scene.objects.find(obj => obj.id === light.id);
     if (sceneLight) {
@@ -563,11 +628,12 @@ function updateSceneObjects() {
     }
   }
   
-  // Actualizar caballos
+  // Update car positions and animations
   for (const agent of agents) {
     const existingObj = scene.objects.find(obj => obj.id === agent.id);
     
     if (existingObj) {
+      // Calculate current interpolated position
       let currentInterpolatedPos;
       if (existingObj.oldPosArray && existingObj.nextPosArray && existingObj.interpolateStart) {
         const elapsedLocal = Date.now() - existingObj.interpolateStart;
@@ -582,6 +648,7 @@ function updateSceneObjects() {
         currentInterpolatedPos[1] += 0.3;
       }
 
+      // Set up new interpolation target
       const newPos = [agent.position.x, agent.position.y + 0.3, agent.position.z];
       
       existingObj.oldPosArray = currentInterpolatedPos; 
@@ -592,9 +659,11 @@ function updateSceneObjects() {
       existingObj.position.y = agent.position.y;
       existingObj.position.z = agent.position.z;
       
+      // Determine if car is moving
       const isMoving = Math.abs(currentInterpolatedPos[0] - newPos[0]) > 0.01 || 
                        Math.abs(currentInterpolatedPos[2] - newPos[2]) > 0.01;
       
+      // Update animation state
       if (isMoving && !existingObj.isMoving) {
         existingObj.isMoving = true;
         existingObj.animationStartTime = Date.now();
@@ -605,8 +674,9 @@ function updateSceneObjects() {
         existingObj.vao = scene.baseHorseIdle.vao;
       }
       
+      // Update animation frame if moving
       if (existingObj.isMoving) {
-        const animSpeed = 120;
+        const animSpeed = 120; // Milliseconds per frame
         const elapsed = Date.now() - (existingObj.animationStartTime || Date.now());
         const frameIndex = Math.floor(elapsed / animSpeed) % 4;
         
@@ -619,13 +689,12 @@ function updateSceneObjects() {
         }
       }
 
-      // ✅ ROTACIÓN CORREGIDA: usar dirActual como fuente de verdad
-      const nextDirection = agent.dirActual || "Down"; // ✅ Usar dirActual, no nextDir
-      
+      // Update rotation based on direction change
+      const nextDirection = agent.dirActual || "Down";
       if (existingObj.currentDirection !== nextDirection) {
         const newAngle = directionToAngle(nextDirection);
         
-        // ✅ Obtener ángulo actual (interpolado si está rotando)
+        // Calculate current rotation angle
         let currentAngle;
         if (existingObj.oldRotY !== undefined && existingObj.rotateStart) {
           const rotElapsed = Date.now() - existingObj.rotateStart;
@@ -633,17 +702,15 @@ function updateSceneObjects() {
           const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
           
           if (rotFract < 1.0) {
-            // ✅ Aún está interpolando, usar ángulo interpolado
             currentAngle = lerp(existingObj.oldRotY, existingObj.rotY, rotFract);
           } else {
-            // ✅ Terminó de interpolar, usar ángulo final
             currentAngle = existingObj.rotY;
           }
         } else {
-          // ✅ No hay interpolación activa, usar ángulo actual
           currentAngle = existingObj.rotY !== undefined ? existingObj.rotY : existingObj.rotRad.y;
         }
         
+        // Normalize angles to [-π, π]
         const normalizeAngle = (angle) => {
           while (angle > Math.PI) angle -= 2 * Math.PI;
           while (angle < -Math.PI) angle += 2 * Math.PI;
@@ -653,13 +720,13 @@ function updateSceneObjects() {
         currentAngle = normalizeAngle(currentAngle);
         const normalizedNew = normalizeAngle(newAngle);
         
-        // ✅ Calcular camino más corto
+        // Calculate shortest rotation path
         let diff = normalizedNew - currentAngle;
         if (diff > Math.PI) diff -= 2 * Math.PI;
         if (diff < -Math.PI) diff += 2 * Math.PI;
         
-        // ✅ Solo iniciar nueva rotación si el cambio es significativo
-        if (Math.abs(diff) > 0.01) { // Umbral de 0.01 radianes (~0.57°)
+        // Start rotation if angle difference is significant
+        if (Math.abs(diff) > 0.01) {
           existingObj.oldRotY = currentAngle;
           existingObj.rotY = currentAngle + diff;
           existingObj.currentDirection = nextDirection;
@@ -667,7 +734,7 @@ function updateSceneObjects() {
         }
       }
     } else {
-      // Nuevo agente
+      // New agent - initialize from scratch
       agent.arrays = scene.baseHorseIdle.arrays;
       agent.bufferInfo = scene.baseHorseIdle.bufferInfo;
       agent.vao = scene.baseHorseIdle.vao;
@@ -697,14 +764,23 @@ function updateSceneObjects() {
   }
 }
 
+/**
+ * Renders a single object with smooth interpolation and rotation
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Object} programInfo - Shader program information
+ * @param {Object3D} object - The object to render
+ * @param {Array<number>} viewProjectionMatrix - Combined view-projection matrix
+ * @param {number} globalFract - Global interpolation factor
+ */
 function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) {
+  // Calculate local interpolation factor
   let localFract = globalFract;
   if (object.interpolateStart) {
     const elapsedLocal = Date.now() - object.interpolateStart;
     localFract = clamp(elapsedLocal / duration, 0, 1);
   }
 
-  // Interpolar posición base
+  // Interpolate position
   let v3_tra;
   if (object.oldPosArray && object.nextPosArray && localFract < 1.0) {
     v3_tra = [
@@ -713,6 +789,7 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
       lerp(object.oldPosArray[2], object.nextPosArray[2], localFract)
     ];
     
+    // Add jumping animation if moving
     if (object.isMoving) {
       const jumpHeight = 0.1;
       const verticalOffset = Math.sin(Math.PI * localFract) * jumpHeight;
@@ -727,7 +804,7 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
     v3_tra = object.posArray;
   }
 
-  // ✅ ROTACIÓN SIMPLIFICADA
+  // Calculate rotation with smooth interpolation
   let rotY = object.rotRad?.y || 0;
   
   if (object.oldRotY !== undefined && object.rotY !== undefined && object.rotateStart) {
@@ -735,27 +812,27 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
     const rotElapsed = Date.now() - object.rotateStart;
     const rotFract = clamp(rotElapsed / rotDuration, 0, 1);
     
-    // ✅ Interpolación suave con ease-in-out
+    // Apply easing function for smooth rotation
     const easedFract = rotFract < 0.5 
       ? 2 * rotFract * rotFract 
       : 1 - Math.pow(-2 * rotFract + 2, 2) / 2;
     
     rotY = lerp(object.oldRotY, object.rotY, easedFract);
     
-    // ✅ Limpiar cuando termine la interpolación
     if (rotFract >= 1.0) {
       rotY = object.rotY;
-      object.rotRad.y = object.rotY; // ✅ Sincronizar rotRad.y
+      object.rotRad.y = object.rotY; 
       delete object.oldRotY;
       delete object.rotateStart;
     }
   } else if (object.rotY !== undefined) {
     rotY = object.rotY;
-    object.rotRad.y = rotY; // ✅ Asegurar sincronización
+    object.rotRad.y = rotY; 
   }
 
   let v3_sca = object.scaArray;
 
+  // Build transformation matrix
   const scaMat = M4.scale(v3_sca);
   const rotXMat = M4.rotationX(object.rotRad.x);
   const rotYMat = M4.rotationY(rotY);
@@ -771,9 +848,11 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
 
   object.matrix = transforms;
 
+  // Calculate final transformation matrices
   const wvpMat = M4.multiply(viewProjectionMatrix, transforms);
   const normalMat = M4.transpose(M4.inverse(object.matrix));
 
+  // Set shader uniforms
   let objectUniforms = {
     u_world: transforms,
     u_worldInverseTransform: normalMat,
@@ -782,35 +861,42 @@ function drawObject(gl, programInfo, object, viewProjectionMatrix, globalFract) 
   }
   twgl.setUniforms(programInfo, objectUniforms);
   
+  // Draw the object
   gl.bindVertexArray(object.vao);
   twgl.drawBufferInfo(gl, object.bufferInfo);
 }
 
-// Function to do the actual display of the objects
+/**
+ * Main rendering loop
+ * Handles animation timing, camera updates, and triggers background updates
+ */
 async function drawScene() {
+  // Calculate delta time
   let now = Date.now();
   let deltaTime = now - then;
   elapsed += deltaTime;
   const fract = Math.min(1.0, elapsed / duration);
   then = now;
 
-  // Clear the canvas
+  // Clear canvas
   gl.clearColor(0.53, 0.81, 0.92, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  // tell webgl to cull faces
+  // Enable face culling and depth testing
   gl.enable(gl.CULL_FACE);
   gl.enable(gl.DEPTH_TEST);
 
+  // Update camera controls
   scene.camera.checkKeys();
   const viewProjectionMatrix = setupViewProjection(gl);
 
   // Draw skybox first
   drawSkybox(gl, viewProjectionMatrix);
 
-  // Switch to phong program for objects
+  // Switch to Phong shader for objects
   gl.useProgram(phongProgramInfo.program);
 
+  // Set global lighting uniforms
   let globalUniforms = {
     u_viewWorldPosition: scene.camera.posArray,
     u_lightWorldPosition: scene.lights[0].posArray,
@@ -820,25 +906,30 @@ async function drawScene() {
   }
   twgl.setUniforms(phongProgramInfo, globalUniforms);
 
-  // Draw the objects
+  // Draw all scene objects
   for (let object of scene.objects) {
     drawObject(gl, phongProgramInfo, object, viewProjectionMatrix, fract);
   }
 
-  // ESTO ES PARA EL DOUBLE BUFFER
+  // Trigger background update at mid-cycle for double buffering effect
   if (elapsed >= duration * 0.5 && !isUpdating && !pendingUpdate) {
     pendingUpdate = true;
     updateInBackground();
   }
 
-  // Resetear cuando se completa el ciclo
+  // Reset elapsed time when cycle completes
   if (elapsed >= duration && !isUpdating) {
     elapsed = 0;
   }
 
+  // Continue animation loop
   requestAnimationFrame(drawScene);
 }
 
+/**
+ * Performs background updates without blocking rendering
+ * Fetches new agent data and updates scene objects
+ */
 async function updateInBackground() {
   if (isUpdating) return;
   
@@ -856,14 +947,20 @@ async function updateInBackground() {
   }
 }
 
+/**
+ * Sets up the view and projection matrices for rendering
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @returns {Array<number>} Combined view-projection matrix
+ */
 function setupViewProjection(gl) {
-  // Field of view of 60 degrees vertically, in radians
+  // 60-degree vertical field of view
   const fov = 60 * Math.PI / 180;
   const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
 
-  // Matrices for the world view
+  // Create projection matrix
   const projectionMatrix = M4.perspective(fov, aspect, 1, 200);
 
+  // Create view matrix from camera
   const cameraPosition = scene.camera.posArray;
   const target = scene.camera.targetArray;
   const up = [0, 1, 0];
@@ -875,14 +972,20 @@ function setupViewProjection(gl) {
   return viewProjectionMatrix;
 }
 
-// Setup a ui.
+/**
+ * Sets up user interface controls
+ * Currently empty - placeholder for future UI elements
+ */
 function setupUI() {
   // Empty for now
 }
 
-// Setup skybox
+/**
+ * Initializes the skybox environment
+ * Loads cubemap textures for the six faces of the skybox
+ */
 function setupSkybox() {
-  // Create a quad that covers the entire canvas
+  // Create fullscreen quad
   const positions = new Float32Array([
     -1, -1,
      1, -1,
@@ -898,10 +1001,11 @@ function setupSkybox() {
   
   skyboxVAO = twgl.createVAOFromBufferInfo(gl, skyboxProgramInfo, skyboxBufferInfo);
   
-  // Load cubemap textures
+  // Create cubemap texture
   skyboxTexture = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_CUBE_MAP, skyboxTexture);
   
+  // Define cubemap faces
   const faceInfos = [
     { target: gl.TEXTURE_CUBE_MAP_POSITIVE_X, url: '../assets/maps/posx.jpg' },
     { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_X, url: '../assets/maps/negx.jpg' },
@@ -911,10 +1015,11 @@ function setupSkybox() {
     { target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, url: '../assets/maps/negz.jpg' },
   ];
   
+  // Load each face
   faceInfos.forEach((faceInfo) => {
     const { target, url } = faceInfo;
     
-    // Setup each face with a temporary 1x1 blue pixel
+    // Initialize with blue pixel as placeholder
     const level = 0;
     const internalFormat = gl.RGBA;
     const width = 1;
@@ -924,7 +1029,7 @@ function setupSkybox() {
     const pixel = new Uint8Array([0, 0, 255, 255]);
     gl.texImage2D(target, level, internalFormat, width, height, 0, format, type, pixel);
     
-    // Load the actual image
+    // Load actual texture
     const image = new Image();
     image.src = url;
     image.addEventListener('load', function() {
@@ -938,28 +1043,32 @@ function setupSkybox() {
   gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 }
 
-// Draw skybox
+/**
+ * Renders the skybox
+ * @param {WebGL2RenderingContext} gl - WebGL context
+ * @param {Array<number>} viewProjectionMatrix - View-projection matrix
+ */
 function drawSkybox(gl, viewProjectionMatrix) {
   gl.useProgram(skyboxProgramInfo.program);
   gl.bindVertexArray(skyboxVAO);
   
-  // Disable depth writing (but keep depth test)
+  // Render skybox at maximum depth
   gl.depthFunc(gl.LEQUAL);
   
-  // Get view matrix without translation
+  // Get view matrix without translation component
   const cameraPosition = scene.camera.posArray;
   const target = scene.camera.targetArray;
   const up = [0, 1, 0];
   const cameraMatrix = M4.lookAt(cameraPosition, target, up);
   const viewMatrix = M4.inverse(cameraMatrix);
   
-  // Remove translation from view matrix
+  // Remove translation
   const viewDirectionMatrix = viewMatrix.slice();
   viewDirectionMatrix[12] = 0;
   viewDirectionMatrix[13] = 0;
   viewDirectionMatrix[14] = 0;
   
-  // Get projection matrix
+  // Calculate matrices for skybox
   const fov = 60 * Math.PI / 180;
   const aspect = gl.canvas.clientWidth / gl.canvas.clientHeight;
   const projectionMatrix = M4.perspective(fov, aspect, 1, 200);
@@ -967,11 +1076,13 @@ function drawSkybox(gl, viewProjectionMatrix) {
   const viewDirectionProjectionMatrix = M4.multiply(projectionMatrix, viewDirectionMatrix);
   const viewDirectionProjectionInverse = M4.inverse(viewDirectionProjectionMatrix);
   
+  // Set skybox shader uniforms
   twgl.setUniforms(skyboxProgramInfo, {
     u_viewDirectionProjectionInverse: viewDirectionProjectionInverse,
     u_skybox: skyboxTexture,
   });
   
+  // Draw skybox
   twgl.drawBufferInfo(gl, skyboxBufferInfo);
   
   // Reset depth function

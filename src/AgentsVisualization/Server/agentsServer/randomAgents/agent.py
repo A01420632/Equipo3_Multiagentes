@@ -320,13 +320,7 @@ class Car(CellAgent):
         return None
     
     def updateDirection(self, nextPos, newDirection=None):
-        """
-        Updates car's facing direction based on movement.
-        
-        Args:
-            nextPos: Position moved to
-            newDirection: Explicit direction to set (if provided)
-        """
+        """Updates car's facing direction based on movement."""
         if not self.cell:
             return
         
@@ -343,8 +337,6 @@ class Car(CellAgent):
             self.dirActual = "Right" if dx > 0 else "Left"
         elif dy != 0 and dx == 0:
             self.dirActual = "Up" if dy > 0 else "Down"
-        else:
-            pass
         
         if self.path and self.pathIndex < len(self.path):
             nextPathPos = self.path[self.pathIndex]
@@ -356,7 +348,6 @@ class Car(CellAgent):
             elif nextDy != 0 and nextDx == 0:
                 self.nextDir = "Up" if nextDy > 0 else "Down"
             else:
-                # Maintain direction for diagonal
                 self.nextDir = self.dirActual
         else:
             self.nextDir = self.dirActual
@@ -381,7 +372,6 @@ class Car(CellAgent):
             if any(isinstance(agent, Destination) for agent in agentsInCurrentCell):
                 self.state = "arrived"
                 self.model.totCarsArrived += 1
-                self.model.cars_arrived_this_step += 1
                 self.remove()
                 return
         
@@ -423,7 +413,6 @@ class Car(CellAgent):
                 if any(isinstance(agent, Destination) for agent in agentsInCell):
                     self.state = "arrived"
                     self.model.totCarsArrived += 1
-                    self.model.cars_arrived_this_step += 1
                     self.remove()
                 return
             else:
@@ -488,7 +477,7 @@ class Car(CellAgent):
                     if any(isinstance(agent, Destination) for agent in agentsInCell):
                         self.state = "arrived"
                         self.model.totCarsArrived += 1
-                        self.model.cars_arrived_this_step += 1
+                        # REMOVE: self.model.cars_arrived_this_step += 1
                         self.remove()
                     return
             
@@ -561,7 +550,7 @@ class Car(CellAgent):
                 self.stuckCounter = 0
                 self.waitCounter = 0
                 self.model.embotellamientos += 1
-                self.model.traffic_jams_this_step += 1
+                # REMOVE: self.model.traffic_jams_this_step += 1
                 self.state = "moving"
                 return
             return

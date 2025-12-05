@@ -19,7 +19,7 @@ import os
 import mesa
 import requests
 
-url = "http://10.49.12.39:5000/api/"
+url = "somethingsomething"
 endpoint = "attempt"
 #endpoint = "validate_attempt"
 
@@ -548,12 +548,12 @@ class CityModel(Model):
         self.datacollector.collect(self)
         data["current_cars"] = self.countActiveCars(self)
         data["total_arrived"] = self.totCarsArrived
-
+        '''
         if self.steps % data["attempt_number"] == 0:
             response = requests.post(url+endpoint, data=json.dumps(data), headers=headers)
             print("Request " + "successful" if response.status_code == 200 else "failed", "Status code:", response.status_code)
             print("Response:", response.json())
-
+        '''
     @staticmethod
     def countActiveCars(model):
         """Count active cars in the simulation"""
